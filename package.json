@@ -1,0 +1,35 @@
+{
+  "name": "reuben-murimi-singularity",
+  "private": true,
+  "version": "2.1.1",
+  "type": "module",
+  "author": "Reuben Murimi",
+  "description": "Sovereign Intelligence HUD & Murimi Engine",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.1",
+    "@supabase/supabase-js": "^2.105.4",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.378.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.3.0",
+    "web-vitals": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.1",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.7",
+    "terser": "^5.31.0",
+    "vite": "^8.0.12"
+  }
+}

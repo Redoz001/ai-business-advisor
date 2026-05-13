@@ -1,0 +1,34 @@
+/* App.css - Tactical HUD Layer */
+.app-container {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 80px 1fr 40px;
+}
+
+.app-header {
+  border-bottom: 1px solid var(--primary-color);
+  padding: 0 2rem;
+  background: rgba(76, 175, 80, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-section {
+  background: rgba(20, 20, 30, 0.9);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scanning Animation for Network Audits */
+.chat-section::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 2px;
+  background: var(--primary-color);
+  box-shadow: 0 0 15px var(--primary-color);
+  animation: scan-line 6s linear infinite;
+}
+
+@keyframes scan-line { 0% { top: 0%; } 100% { top: 100%; } }
