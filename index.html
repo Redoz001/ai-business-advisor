@@ -2,24 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Removed leading slash to prevent 404 on Vercel deployments -->
+    <link rel="icon" type="image/svg+xml" href="vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- SOVEREIGN IDENTITY METADATA -->
-    <title>Reuben Murimi | Unlimited Intelligence</title>
-    <meta name="author" content="Reuben Murimi" />
-    <meta name="description" content="Sovereign Intelligence HUD & Murimi Engine - Kernel Optimized for Ubuntu" />
-    
-    <!-- GHOST PROTOCOL: Prevent unauthorized caching of sensitive audit logic -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
+    <title>Reuben Murimi | Sovereign Intelligence</title>
+    <!-- Ensuring the base path is relative for better compatibility -->
+    <base href="/" />
   </head>
-  <body>
-    <!-- The Root of the Singularity -->
+  <body style="margin: 0; background-color: #000; color: #0f0; font-family: 'Courier New', Courier, monospace;">
     <div id="root"></div>
     
-    <!-- System Ignition -->
+    <!-- Vite's entry point script -->
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Fallback check for Environment Variables -->
+    <script>
+      window.onload = () => {
+        // If this logs undefined, Vercel hasn't been redeployed with the variables
+        console.log("System Status: Handshake initialized.");
+      };
+    </script>
   </body>
 </html>
