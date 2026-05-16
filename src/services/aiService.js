@@ -1,55 +1,40 @@
-import { createClient } from '@supabase/supabase-js';
+const SUPABASE_URL =
+  "https://whvzdutfyydshamwfhvu.functions.supabase.co/reuben-ai";
 
-const supabase = createClient(
-  'https://whvzdutfyydshamwfhvu.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo'
-);
+async function forge(message, onChunk) {
+  try {
+    const res = await fetch(SUPABASE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message }),
+    });
 
-const aiService = {
+    const data = await res.json();
 
-  forge: async (input, context) => {
+    const reply = data.reply || "No response";
 
-    console.log("Attempting to reach Edge Function...");
-
-    try {
-
-      const { data, error } = await supabase.functions.invoke(
-        'reuben-ai',
-        {
-          body: {
-            prompt: input,
-            context: context
-          }
-        }
-      );
-
-      console.log("RAW RESPONSE:", data);
-
-      if (error) {
-        console.error("SUPABASE ERROR:", error);
-        throw error;
+    // optional streaming effect
+    if (onChunk) {
+      let text = "";
+      for (let i = 0; i < reply.length; i++) {
+        text += reply[i];
+        onChunk(text);
+        await new Promise((r) => setTimeout(r, 5));
       }
-
-      // Safe fallback handling
-      if (!data) {
-        return "No response received.";
-      }
-
-      // If edge function returns message
-      if (data.message) {
-        return data.message;
-      }
-
-      // If edge function returns generic object
-      return JSON.stringify(data, null, 2);
-
-    } catch (err) {
-
-      console.error("Link Failure:", err);
-
-      return `Error: ${err.message}`;
     }
-  }
-};
 
-export default aiService;
+    return {
+      type: "text",
+      content: reply,
+    };
+  } catch (err) {
+    return {
+      type: "text",
+      content: "Edge Function error: " + String(err),
+    };
+  }
+}
+
+export default { forge };

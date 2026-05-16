@@ -1,32 +1,90 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts"
-
-console.log("Hello from Functions!")
-
 Deno.serve(async (req) => {
-  const { name } = await req.json()
-  const data = {
-    message: `Hello ${name}!`,
+  // =========================
+  // CORS (IMPORTANT for frontend)
+  // =========================
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+  };
+
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers });
   }
 
-  return new Response(
-    JSON.stringify(data),
-    { headers: { "Content-Type": "application/json" } },
-  )
-})
+  try {
+    // =========================
+    // SAFE BODY PARSING
+    // =========================
+    const body = await req.json().catch(() => ({}));
 
-/* To invoke locally:
+    const message = body?.message;
 
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
+    // =========================
+    // VALIDATION
+    // =========================
+    if (!message || typeof message !== "string") {
+      return new Response(
+        JSON.stringify({
+          error: "Missing or invalid 'message'",
+          expected: { message: "string" },
+          received: body,
+        }),
+        {
+          status: 400,
+          headers,
+        }
+      );
+    }
 
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/reuben-ai' \
-    --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
+    // =========================
+    // SIMPLE AI RESPONSE (BASE)
+    // =========================
+    const reply = generateResponse(message);
 
-*/
+    return new Response(
+      JSON.stringify({
+        reply,
+        status: "success",
+      }),
+      {
+        status: 200,
+        headers,
+      }
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        error: "Server crashed",
+        details: String(err),
+      }),
+      {
+        status: 500,
+        headers,
+      }
+    );
+  }
+});
+
+// =========================
+// SIMPLE AI LOGIC
+// (replace later with Groq/HF)
+// =========================
+function generateResponse(message) {
+  const text = message.toLowerCase();
+
+  if (text.includes("hello")) {
+    return "👋 Reuben AI online and ready.";
+  }
+
+  if (text.includes("who are you")) {
+    return "🤖 I am Reuben AI, created by Reuben Murimi.";
+  }
+
+  if (text.includes("help")) {
+    return "💡 I can help with coding, AI, cybersecurity, and automation.";
+  }
+
+  return `🤖 Reuben AI: received -> ${message}`;
+}
