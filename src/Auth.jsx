@@ -11,7 +11,7 @@ export default function Auth({ setUser }) {
       password,
     });
 
-    if (data?.user) setUser(data.user);
+    if (!error) setUser(data.user);
   }
 
   async function signIn() {
@@ -20,7 +20,7 @@ export default function Auth({ setUser }) {
       password,
     });
 
-    if (data?.user) setUser(data.user);
+    if (!error) setUser(data.user);
   }
 
   return (
@@ -29,17 +29,21 @@ export default function Auth({ setUser }) {
 
       <input
         placeholder="email"
+        value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
 
       <input
-        type="password"
         placeholder="password"
+        type="password"
+        value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
 
-      <button onClick={signUp}>Sign Up</button>
-      <button onClick={signIn}>Sign In</button>
+      <div style={{ marginTop: 10 }}>
+        <button onClick={signIn}>Login</button>
+        <button onClick={signUp}>Sign Up</button>
+      </div>
     </div>
   );
 }

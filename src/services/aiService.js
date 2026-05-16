@@ -1,9 +1,9 @@
-const SUPABASE_URL =
-  "https://whvzdutfyydshamwfhvu.functions.supabase.co/reuben-ai";
+const SUPABASE_FUNCTION_URL =
+  "https://whvzdutfyydshamwfhvu.supabase.co/functions/v1/reuben-ai";
 
-async function forge(message, onChunk) {
+async function forge(message) {
   try {
-    const res = await fetch(SUPABASE_URL, {
+    const res = await fetch(SUPABASE_FUNCTION_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -13,26 +13,21 @@ async function forge(message, onChunk) {
 
     const data = await res.json();
 
-    const reply = data.reply || "No response";
-
-    // optional streaming effect
-    if (onChunk) {
-      let text = "";
-      for (let i = 0; i < reply.length; i++) {
-        text += reply[i];
-        onChunk(text);
-        await new Promise((r) => setTimeout(r, 5));
-      }
+    if (!res.ok) {
+      return {
+        type: "text",
+        content: data?.error || "Edge Function error",
+      };
     }
 
     return {
       type: "text",
-      content: reply,
+      content: data.reply,
     };
   } catch (err) {
     return {
       type: "text",
-      content: "Edge Function error: " + String(err),
+      content: "Network error: " + String(err),
     };
   }
 }
