@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "./supabase";
+import { supabase } from "./lib/supabase";
 import Auth from "./Auth";
 import Chat from "./Chat";
 
