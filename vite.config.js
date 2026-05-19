@@ -39,10 +39,14 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        // Chunking Strategy: Separates logic core from the UI framework
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          logic: ['./src/lib/ghostProtocol.js', './src/services/aiService.js'],
+        // Chunking Strategy: Separates logic core from the UI framework (Vite 8 / Rolldown functional syntax)
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'vendor';
+          }
+          if (id.includes('ghostProtocol.js') || id.includes('aiService.js')) {
+            return 'logic';
+          }
         },
       },
     },
