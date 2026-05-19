@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "./supabase";
+import { supabase } from "./lib/supabase.js"; // Fixed the path to point inside the lib folder
 
 export default function Auth({ setUser }) {
   const [email, setEmail] = useState("");
