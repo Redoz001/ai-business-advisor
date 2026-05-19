@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { supabase } from "./lib/supabase";
-import Auth from "./Auth";
-import Chat from "./Chat";
+import { supabase } from "./lib/supabase.js";
+import Auth from "./src/Auth";
+import Chat from "./src/Chat.jsx";
 
 export default function App() {
   const [user, setUser] = useState(null);
