@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { supabase } from "./lib/supabase.js"; // Tailored path assuming supabase.js is inside src/lib/
-import Auth from "./Auth.jsx";               // Looks directly inside the src folder
-import Chat from "./Chat.jsx";               // Looks directly inside the src folder
+import { supabase } from "./lib/supabase.js";
+import Auth from "./Auth.jsx";
+import Chat from "./chat.jsx"; // Changed from "./Chat.jsx" to "./chat.jsx"
 
 export default function App() {
   const [user, setUser] = useState(null);
