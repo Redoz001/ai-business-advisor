@@ -7,58 +7,53 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen flex">
+<body class="bg-gray-950 text-gray-100 min-h-screen">
 
   <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-[100] flex items-center justify-center p-4">
     <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
       <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // LOGIN</h2>
-      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 focus:border-emerald-500 outline-none text-white">
-      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 focus:border-emerald-500 outline-none text-white">
+      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 outline-none">
+      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 outline-none">
       <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold hover:bg-emerald-500 transition">Access System</button>
     </div>
   </div>
 
   <div id="app" class="hidden flex w-full h-screen">
     
-    <div id="sidebar" class="hidden md:flex flex-col w-64 bg-gray-900 border-r border-gray-800 p-4 justify-between">
-      <div>
-        <h1 class="text-xl font-bold text-emerald-400 mb-8 px-2">REUBEN AI</h1>
-        <nav class="space-y-2">
-          <button onclick="resetChat()" class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition"><span>+</span> New Chat</button>
-          <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">🔍 Search Chats</button>
-          <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">📚 Library</button>
-        </nav>
-        <div class="mt-8">
-          <p class="text-xs font-bold text-gray-500 px-2 mb-2">RECENTS</p>
-          <div class="space-y-1"><p class="text-sm p-2 text-gray-400 truncate cursor-pointer hover:bg-gray-800 rounded">Project Deployment...</p></div>
-        </div>
+    <aside id="sidebar" class="hidden md:flex flex-col w-64 bg-gray-900 border-r border-gray-800 p-4 absolute md:relative z-40 h-full">
+      <h1 class="text-xl font-bold text-emerald-400 mb-8 px-2">REUBEN AI</h1>
+      <nav class="space-y-2">
+        <button onclick="startNewChat()" class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition"><span>+</span> New Chat</button>
+        <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">🔍 Search Chats</button>
+        <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">📚 Library</button>
+      </nav>
+      
+      <div class="mt-8 flex-1">
+        <p class="text-xs font-bold text-gray-500 px-2 mb-2">RECENTS</p>
+        <div id="recentsList" class="space-y-1">
+           </div>
       </div>
-      <div class="border-t border-gray-800 pt-4">
-        <button onclick="showView('settings')" class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">⚙️ Settings</button>
-        <button onclick="handleLogout()" class="text-red-400 text-sm mt-2 px-2 hover:text-red-300">Logout</button>
-      </div>
-    </div>
 
-    <main class="flex-1 flex flex-col h-full">
-      <header class="p-4 flex items-center gap-4">
-        <button onclick="toggleSidebar()" class="md:hidden text-2xl">☰</button>
+      <div class="border-t border-gray-800 pt-4">
+        <button onclick="handleLogout()" class="text-red-400 text-sm px-2 hover:text-red-300">Logout</button>
+      </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-full bg-gray-950">
+      <header class="p-4 flex items-center gap-4 border-b border-gray-800">
+        <button onclick="toggleSidebar()" class="text-2xl">☰</button>
         <h2 class="text-lg font-semibold">Core Online</h2>
       </header>
 
-      <div id="chatView" class="flex-1 overflow-y-auto p-4 md:p-8">
-        <div id="chatWindow" class="max-w-2xl mx-auto space-y-4"></div>
-        <div class="max-w-2xl mx-auto mt-4 sticky bottom-0">
-          <div class="flex gap-2 bg-gray-900 p-2 rounded-lg border border-gray-800">
-            <input id="chatInput" type="text" placeholder="Enter command..." class="flex-1 bg-transparent p-2 outline-none text-white">
-            <button onclick="sendMessage()" class="bg-emerald-600 px-4 py-2 rounded font-bold hover:bg-emerald-500">Send</button>
+      <div id="chatView" class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center">
+        <div id="chatWindow" class="w-full max-w-2xl space-y-4">
           </div>
-        </div>
       </div>
 
-      <div id="settingsView" class="hidden flex-1 p-8">
-        <h2 class="text-2xl font-bold mb-6">Account Settings</h2>
-        <div class="bg-gray-900 p-6 rounded-lg border border-gray-800">
-            <p id="userEmail" class="text-gray-400"></p>
+      <div class="p-4 border-t border-gray-800">
+        <div class="max-w-2xl mx-auto flex gap-2">
+          <input id="chatInput" type="text" placeholder="Enter command..." class="flex-1 bg-gray-900 p-3 rounded border border-gray-700 outline-none text-white">
+          <button onclick="sendMessage()" class="bg-emerald-600 px-6 py-3 rounded font-bold hover:bg-emerald-500">Send</button>
         </div>
       </div>
     </main>
@@ -67,27 +62,53 @@
   <script>
     const sb = supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo");
 
-    // UI Toggle
+    // UI Utilities
     function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); }
-    function showView(view) {
-        document.getElementById('chatView').classList.add('hidden');
-        document.getElementById('settingsView').classList.add('hidden');
-        document.getElementById(view + 'View').classList.remove('hidden');
-        if(window.innerWidth < 768) toggleSidebar();
+    
+    function startNewChat() {
+      document.getElementById('chatWindow').innerHTML = ''; // Clears the view
+      if(window.innerWidth < 768) toggleSidebar(); // Close sidebar on mobile
     }
-    function resetChat() { document.getElementById('chatWindow').innerHTML = ''; }
 
-    // Auth State (NO REFRESHES)
+    // Auth & Data Logic
     sb.auth.onAuthStateChange((event, session) => {
-        if (session) {
-            document.getElementById('authOverlay').classList.add('hidden');
-            document.getElementById('app').classList.remove('hidden');
-            document.getElementById('userEmail').innerText = "Logged in as: " + session.user.email;
-        } else {
-            document.getElementById('authOverlay').classList.remove('hidden');
-            document.getElementById('app').classList.add('hidden');
-        }
+      if (session) {
+        document.getElementById('authOverlay').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        loadMessages();
+      } else {
+        document.getElementById('authOverlay').classList.remove('hidden');
+        document.getElementById('app').classList.add('hidden');
+      }
     });
+
+    async function loadMessages() {
+      const window = document.getElementById('chatWindow');
+      window.innerHTML = ''; // Ensure no hardcoded text exists
+      
+      const { data } = await sb.from('messages').select('*').order('created_at', { ascending: true });
+      data?.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = `p-3 rounded-lg w-fit max-w-[80%] ${msg.is_user ? 'bg-gray-800 ml-auto' : 'bg-emerald-900/20'}`;
+        div.innerText = msg.content;
+        window.appendChild(div);
+      });
+      window.scrollTop = window.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('chatInput');
+      if (!input.value) return;
+      const { data: { user } } = await sb.auth.getUser();
+      
+      // Push to DB
+      await sb.from('messages').insert({ content: input.value, is_user: true, user_id: user.id });
+      const { data } = await sb.functions.invoke('reuben-ai', { body: { message: input.value } });
+      await sb.from('messages').insert({ content: data.reply, is_user: false, user_id: user.id });
+      
+      input.value = '';
+      loadMessages();
+    }
 
     async function handleLogin() {
       const { error } = await sb.auth.signInWithPassword({ email: document.getElementById('email').value, password: document.getElementById('password').value });
@@ -95,20 +116,6 @@
     }
     
     async function handleLogout() { await sb.auth.signOut(); }
-
-    async function sendMessage() {
-      const input = document.getElementById('chatInput');
-      if (!input.value) return;
-      const { data: { user } } = await sb.auth.getUser();
-      
-      // Update UI immediately
-      document.getElementById('chatWindow').innerHTML += `<div class="p-3 bg-gray-800 ml-auto w-fit rounded-lg">${input.value}</div>`;
-      
-      const { data } = await sb.functions.invoke('reuben-ai', { body: { message: input.value } });
-      document.getElementById('chatWindow').innerHTML += `<div class="p-3 bg-emerald-900/20 w-fit rounded-lg">${data.reply}</div>`;
-      
-      input.value = '';
-    }
   </script>
 </body>
 </html>
