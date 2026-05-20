@@ -1,26 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <!-- Removed leading slash to prevent 404 on Vercel deployments -->
-    <link rel="icon" type="image/svg+xml" href="vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Reuben Murimi | Sovereign Intelligence</title>
-    <!-- Ensuring the base path is relative for better compatibility -->
-    <base href="/" />
-  </head>
-  <body style="margin: 0; background-color: #000; color: #0f0; font-family: 'Courier New', Courier, monospace;">
-    <div id="root"></div>
-    
-    <!-- Vite's entry point script -->
-    <script type="module" src="/src/main.jsx"></script>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reuben AI - Central Command</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100">
 
-    <!-- Fallback check for Environment Variables -->
-    <script>
-      window.onload = () => {
-        // If this logs undefined, Vercel hasn't been redeployed with the variables
-        console.log("System Status: Handshake initialized.");
-      };
-    </script>
-  </body>
+  <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-50 flex items-center justify-center p-4">
+    <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800">
+      <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // LOGIN</h2>
+      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4">
+      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6">
+      <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold">Access System</button>
+    </div>
+  </div>
+
+  <script>
+    // 1. UNIQUE VARIABLE NAME to prevent "Already Declared" errors
+    const sb = window.supabase.createClient(
+      "https://whvzdutfyydshamwfhvu.supabase.co", 
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"
+    );
+
+    // 2. Renamed function to match the button
+    async function handleLogin() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      
+      const { error } = await sb.auth.signUp({ email, password });
+      
+      if (error) {
+        alert("Signup Error: " + error.message);
+      } else {
+        alert("Success! Check your email.");
+      }
+    }
+  </script>
+</body>
 </html>

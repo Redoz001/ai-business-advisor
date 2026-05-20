@@ -1,1 +1,196 @@
-R
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reuben AI - Central Command</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans h-screen flex overflow-hidden">
+
+  <aside class="w-80 bg-gray-900 border-r border-gray-800 flex flex-col justify-between">
+    <div class="p-4 flex flex-col h-full overflow-hidden">
+      <button onclick="createNewSession()" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 transition rounded-lg font-medium text-sm flex items-center justify-center gap-2 mb-4 shadow-lg shadow-emerald-900/20">
+        <span>+</span> New Chat
+      </button>
+      
+      <div class="flex-1 overflow-y-auto space-y-1 pr-1" id="sessionList">
+        <p class="text-xs text-gray-500 p-2">Loading history matrix...</p>
+      </div>
+    </div>
+    <div class="p-4 border-t border-gray-800 text-xs text-gray-500 font-mono">
+      CORE V1.2 // REUBEN MURIMI
+    </div>
+  </aside>
+
+  <main class="flex-1 flex flex-col bg-gray-950 position-relative">
+    <header class="h-16 border-b border-gray-900 flex items-center px-8 justify-between bg-gray-950/50 backdrop-blur">
+      <h2 class="font-mono text-sm tracking-widest text-emerald-400 font-bold" id="currentChatTitle">REUBEN AI // AUTONOMOUS CORE</h2>
+    </header>
+
+    <div class="flex-1 overflow-y-auto p-8 space-y-6" id="chatStream">
+      <div class="max-w-3xl mx-auto text-center py-20 text-gray-500">
+        <h1 class="text-3xl font-bold text-gray-300 mb-2 font-mono">System Initialization Complete.</h1>
+        <p class="text-sm">Select a previous conversation or ignite a new handshake query matrix.</p>
+      </div>
+    </div>
+
+    <footer class="p-6 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent">
+      <div class="max-w-3xl mx-auto">
+        <form id="queryForm" onsubmit="handleQuery(event)" class="relative flex items-center bg-gray-900 border border-gray-800 focus-within:border-emerald-500 transition rounded-xl p-2 shadow-2xl">
+          <input type="text" id="userInput" autocomplete="off" placeholder="Message Reuben AI..." class="w-full bg-transparent py-3 px-4 text-sm text-gray-100 focus:outline-none placeholder-gray-500">
+          <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition">
+            Execute
+          </button>
+        </form>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    // Live Supabase Infrastructure Keys
+    const SUPABASE_URL = "https://whvzdutfyydshamwfhvu.supabase.co"; 
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"; 
+    const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/reuben-ai`;
+    
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let activeSessionId = null;
+
+    window.onload = async () => {
+      await loadSessions();
+    };
+
+    // Load session list into Sidebar
+    async function loadSessions() {
+      const { data: sessions, error } = await supabase
+        .from('chat_sessions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) return console.error('Error fetching sessions:', error);
+      
+      const container = document.getElementById('sessionList');
+      container.innerHTML = '';
+      
+      sessions.forEach(session => {
+        const btn = document.createElement('button');
+        btn.className = `w-full text-left px-3 py-2.5 rounded-md text-sm truncate font-mono transition flex items-center justify-between ${session.id === activeSessionId ? 'bg-gray-800 text-emerald-400 border-l-2 border-emerald-500' : 'text-gray-400 hover:bg-gray-850 hover:text-gray-200'}`;
+        btn.innerHTML = `<span>💬 ${session.title}</span>`;
+        btn.onclick = () => switchSession(session.id, session.title);
+        container.appendChild(btn);
+      });
+    }
+
+    // Create a fresh conversation channel
+    async function createNewSession() {
+      const { data, error } = await supabase
+        .from('chat_sessions')
+        .insert([{ title: `Query Cluster [${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}]` }])
+        .select();
+
+      if (error) return alert('Session initialization failed.');
+      
+      activeSessionId = data[0].id;
+      await loadSessions();
+      switchSession(activeSessionId, data[0].title);
+    }
+
+    // Switch active chat frame
+    async function switchSession(id, title) {
+      activeSessionId = id;
+      document.getElementById('currentChatTitle').innerText = `ACTIVE CORE // ${title.toUpperCase()}`;
+      await loadSessions();
+      
+      const { data: messages, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      const stream = document.getElementById('chatStream');
+      stream.innerHTML = '';
+
+      const filtered = messages.filter(m => m.session_id === id);
+
+      if(filtered.length === 0) {
+        stream.innerHTML = `<div class="text-center py-20 text-gray-600 text-sm font-mono">[ No payload history in this matrix. Send a message to record string. ]</div>`;
+        return;
+      }
+
+      filtered.forEach(msg => appendMessageUI(msg.role, msg.content));
+    }
+
+    // Append message to UI window
+    function appendMessageUI(role, content) {
+      const stream = document.getElementById('chatStream');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `max-w-3xl mx-auto flex gap-4 p-4 rounded-xl ${role === 'user' ? 'bg-gray-900/40' : 'bg-emerald-950/10 border border-emerald-900/20'}`;
+      
+      const avatar = role === 'user' ? '👤' : '⚡';
+      const name = role === 'user' ? 'REUBEN' : 'REUBEN AI';
+      const nameColor = role === 'user' ? 'text-gray-400' : 'text-emerald-400';
+
+      msgDiv.innerHTML = `
+        <div class="text-xl">${avatar}</div>
+        <div>
+          <div class="text-xs font-mono font-bold tracking-wider mb-1 ${nameColor}">${name}</div>
+          <div class="text-sm leading-relaxed text-gray-300 whitespace-pre-line">${content}</div>
+        </div>
+      `;
+      stream.appendChild(msgDiv);
+      stream.scrollTop = stream.scrollHeight;
+    }
+
+    // Process Submit Action
+    async function handleQuery(e) {
+      e.preventDefault();
+      const input = document.getElementById('userInput');
+      const promptText = input.value.trim();
+      
+      if (!promptText) return;
+
+      if (!activeSessionId) {
+        await createNewSession();
+      }
+
+      // Input clear fix
+      input.value = '';
+
+      // 1. Commit User Prompt to Supabase Database
+      await supabase.from('chat_messages').insert([
+        { session_id: activeSessionId, role: 'user', content: promptText }
+      ]);
+      appendMessageUI('user', promptText);
+
+      // 2. Fire Request Matrix to Edge Function
+      try {
+        const response = await fetch(EDGE_FUNCTION_URL, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({ message: promptText })
+        });
+
+        const data = await response.json();
+        const aiReply = data.reply || "Error: System response matrix returned empty.";
+
+        // 3. Commit AI Reply to Supabase Database
+        await supabase.from('chat_messages').insert([
+          { session_id: activeSessionId, role: 'assistant', content: aiReply }
+        ]);
+        appendMessageUI('assistant', aiReply);
+
+      } catch (err) {
+        console.error(err);
+        appendMessageUI('assistant', "Transmission error. Edge function processing offline.");
+      }
+    }
+  </script>
+</body>
+</html>
