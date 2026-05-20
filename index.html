@@ -35,13 +35,11 @@
   </div>
 
   <script>
-    // 1. Initialize
     const sb = supabase.createClient(
       "https://whvzdutfyydshamwfhvu.supabase.co", 
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"
     );
 
-    // 2. UI Helpers
     function showApp() {
       document.getElementById('authOverlay').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
@@ -52,7 +50,6 @@
       document.getElementById('app').classList.add('hidden');
     }
 
-    // 3. Auth Management
     sb.auth.onAuthStateChange((event, session) => {
       session ? showApp() : showLogin();
     });
@@ -73,7 +70,6 @@
       window.location.reload();
     }
 
-    // 4. Chat Functionality
     async function sendMessage() {
       const input = document.getElementById('chatInput');
       const chatWindow = document.getElementById('chatWindow');
@@ -83,8 +79,8 @@
       chatWindow.innerHTML += `<p class="mt-2 text-emerald-300">User: ${message}</p>`;
       input.value = '';
 
-      // REPLACE 'reuben-ai-chat' with your actual Edge Function name
-      const { data, error } = await sb.functions.invoke('reuben-ai-chat', {
+      // Invoking 'reuben-ai'
+      const { data, error } = await sb.functions.invoke('reuben-ai', {
         body: { message: message },
       });
 
