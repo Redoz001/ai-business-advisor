@@ -4,104 +4,97 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reuben AI // Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
+<body class="bg-gray-950 text-gray-100 font-sans h-screen flex overflow-hidden">
+
+  <aside id="sidebar" class="hidden md:flex flex-col w-64 bg-gray-900 border-r border-gray-800 p-4 shrink-0">
+    <h1 class="text-xl font-bold text-emerald-400 mb-8 px-2">REUBEN AI</h1>
+    <button onclick="location.reload()" class="flex items-center gap-3 w-full p-3 hover:bg-gray-800 rounded-lg transition">+ New Chat</button>
+    <div class="mt-auto border-t border-gray-800 pt-4">
+      <button onclick="handleLogout()" class="text-red-400 text-sm p-2 hover:text-red-300">Logout</button>
+    </div>
+  </aside>
+
+  <main class="flex-1 flex flex-col h-full bg-gray-950">
+    <header class="p-4 border-b border-gray-800 flex items-center gap-4">
+      <button onclick="document.getElementById('sidebar').classList.toggle('hidden')" class="md:hidden text-2xl">☰</button>
+      <h2 class="font-semibold text-gray-300">Reuben AI</h2>
+    </header>
+
+    <div id="chatWindow" class="flex-1 overflow-y-auto p-4 space-y-6"></div>
+
+    <div class="p-4 border-t border-gray-800 bg-gray-950">
+      <div class="max-w-3xl mx-auto relative">
+        <input id="chatInput" type="text" placeholder="Message Reuben AI..." class="w-full bg-gray-900 border border-gray-700 p-4 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 pr-16" onkeydown="if(event.key==='Enter') sendMessage()">
+        <button onclick="sendMessage()" class="absolute right-3 top-3 bg-emerald-600 px-4 py-1.5 rounded-lg font-bold">Send</button>
+      </div>
+    </div>
+  </main>
 
   <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-[100] flex items-center justify-center p-4">
-    <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
-      <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // LOGIN</h2>
+    <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800">
+      <h2 class="text-2xl font-bold mb-6 text-emerald-400">LOGIN</h2>
       <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700">
       <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700">
-      <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold hover:bg-emerald-500">Access System</button>
+      <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold">Access System</button>
     </div>
-  </div>
-
-  <div id="app" class="hidden flex w-full h-screen">
-    <aside id="sidebar" class="hidden md:flex flex-col w-64 bg-gray-900 border-r border-gray-800 p-4">
-      <h1 class="text-xl font-bold text-emerald-400 mb-8 px-2">REUBEN AI</h1>
-      <nav class="space-y-2">
-        <button onclick="clearChat()" class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition"><span>+</span> New Chat</button>
-        <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">🔍 Search</button>
-      </nav>
-      <div class="mt-auto border-t border-gray-800 pt-4">
-        <button onclick="handleLogout()" class="text-red-400 text-sm px-2">Logout</button>
-      </div>
-    </aside>
-
-    <main class="flex-1 flex flex-col h-full bg-gray-950">
-      <header class="p-4 border-b border-gray-800 flex items-center gap-4">
-        <button onclick="toggleSidebar()" class="text-2xl md:hidden">☰</button>
-        <h2 class="text-lg font-semibold text-emerald-400">Core Online</h2>
-      </header>
-
-      <div id="chatWindow" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
-        </div>
-
-      <div class="p-4 border-t border-gray-800">
-        <div class="max-w-3xl mx-auto flex gap-2">
-          <input id="chatInput" type="text" class="flex-1 bg-gray-900 p-3 rounded border border-gray-700 outline-none text-white" placeholder="Enter command...">
-          <button onclick="sendMessage()" class="bg-emerald-600 px-6 py-3 rounded font-bold hover:bg-emerald-500">Send</button>
-        </div>
-      </div>
-    </main>
   </div>
 
   <script>
     const sb = supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo");
 
-    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); }
-    function clearChat() { document.getElementById('chatWindow').innerHTML = ''; }
-
-    sb.auth.onAuthStateChange((event, session) => {
-      document.getElementById('authOverlay').classList.toggle('hidden', !!session);
-      document.getElementById('app').classList.toggle('hidden', !session);
-      if (session) loadMessages();
-    });
-
-    async function loadMessages() {
+    // 1. UI Rendering Logic (No Wiping!)
+    function appendMessage(content, isUser) {
       const win = document.getElementById('chatWindow');
-      const { data } = await sb.from('messages').select('*').order('created_at', { ascending: true });
-      win.innerHTML = '';
-      data?.forEach(m => {
-        const isUser = m.is_user;
-        const div = document.createElement('div');
-        // Styling for bubbles
-        div.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
-        div.innerHTML = `<div class="max-w-[70%] p-4 rounded-2xl ${isUser ? 'bg-emerald-600 text-white rounded-br-none' : 'bg-gray-800 text-gray-200 rounded-bl-none'}">${m.content}</div>`;
-        win.appendChild(div);
-      });
-      win.scrollTop = win.scrollHeight;
+      const div = document.createElement('div');
+      div.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+      div.innerHTML = `<div class="max-w-[70%] p-4 rounded-2xl ${isUser ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-100'}">${content}</div>`;
+      win.appendChild(div);
+      win.scrollTop = win.scrollHeight; // Auto-scroll to bottom
     }
 
+    // 2. Initial History Load
+    async function loadHistory() {
+      const { data } = await sb.from('messages').select('*').order('created_at', { ascending: true });
+      data?.forEach(msg => appendMessage(msg.content, msg.is_user));
+    }
+
+    // 3. Send Logic
     async function sendMessage() {
       const input = document.getElementById('chatInput');
-      if (!input.value) return;
       const msg = input.value;
+      if (!msg) return;
       input.value = '';
+
+      // Append your message immediately
+      appendMessage(msg, true);
       
       const { data: { user } } = await sb.auth.getUser();
-      // Optimistic Render
-      const win = document.getElementById('chatWindow');
-      win.innerHTML += `<div class="flex justify-end"><div class="max-w-[70%] p-4 rounded-2xl bg-emerald-600 text-white rounded-br-none">${msg}</div></div>`;
-      win.scrollTop = win.scrollHeight;
-
       await sb.from('messages').insert({ content: msg, is_user: true, user_id: user.id });
-      try {
-        const { data } = await sb.functions.invoke('reuben-ai', { body: { message: msg } });
-        if (data?.reply) {
-            await sb.from('messages').insert({ content: data.reply, is_user: false, user_id: user.id });
-            loadMessages();
-        }
-      } catch (e) { alert("AI Service Error"); }
+
+      // Call AI
+      const { data } = await sb.functions.invoke('reuben-ai', { body: { message: msg } });
+      
+      if (data?.reply) {
+        appendMessage(data.reply, false);
+        await sb.from('messages').insert({ content: data.reply, is_user: false, user_id: user.id });
+      }
     }
+
+    // Auth Helpers
+    sb.auth.onAuthStateChange((_, session) => {
+      document.getElementById('authOverlay').classList.toggle('hidden', !!session);
+      document.getElementById('app')?.classList.remove('hidden');
+      if (session) loadHistory();
+    });
 
     async function handleLogin() {
-      const { error } = await sb.auth.signInWithPassword({ email: document.getElementById('email').value, password: document.getElementById('password').value });
-      if (error) alert(error.message);
+      await sb.auth.signInWithPassword({ email: document.getElementById('email').value, password: document.getElementById('password').value });
     }
-    async function handleLogout() { await sb.auth.signOut(); window.location.reload(); }
+    
+    async function handleLogout() { await sb.auth.signOut(); location.reload(); }
   </script>
 </body>
 </html>
