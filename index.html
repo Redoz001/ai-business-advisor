@@ -7,36 +7,68 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-950 text-gray-100">
+<body class="bg-gray-950 text-gray-100 min-h-screen">
 
   <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-50 flex items-center justify-center p-4">
-    <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800">
+    <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
       <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // LOGIN</h2>
-      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4">
-      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6">
-      <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold">Access System</button>
+      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 outline-none focus:border-emerald-500">
+      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 outline-none focus:border-emerald-500">
+      <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold hover:bg-emerald-500 transition">Access System</button>
     </div>
   </div>
 
+  <div id="app" class="hidden p-8">
+    <h1 class="text-2xl font-bold text-emerald-400">System Access Granted</h1>
+    <p class="mt-4">Welcome to the core, Reuben.</p>
+    <button onclick="handleLogout()" class="mt-6 text-red-400 hover:text-red-300">Logout</button>
+  </div>
+
   <script>
-    // 1. UNIQUE VARIABLE NAME to prevent "Already Declared" errors
-    const sb = window.supabase.createClient(
+    // 1. Initialize
+    const sb = supabase.createClient(
       "https://whvzdutfyydshamwfhvu.supabase.co", 
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"
     );
 
-    // 2. Renamed function to match the button
+    // 2. UI Helper Functions
+    function showApp() {
+      document.getElementById('authOverlay').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+    }
+
+    function showLogin() {
+      document.getElementById('authOverlay').classList.remove('hidden');
+      document.getElementById('app').classList.add('hidden');
+    }
+
+    // 3. Persistent Session Listener (Fixes the login loop)
+    sb.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        showApp();
+      } else {
+        showLogin();
+      }
+    });
+
+    // 4. Run on page load
+    sb.auth.getSession().then(({ data: { session } }) => {
+      if (session) showApp();
+      else showLogin();
+    });
+
+    // 5. Auth Handlers
     async function handleLogin() {
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
       
-      const { error } = await sb.auth.signUp({ email, password });
-      
-      if (error) {
-        alert("Signup Error: " + error.message);
-      } else {
-        alert("Success! Check your email.");
-      }
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) alert("Login Error: " + error.message);
+    }
+
+    async function handleLogout() {
+      await sb.auth.signOut();
+      window.location.reload();
     }
   </script>
 </body>
