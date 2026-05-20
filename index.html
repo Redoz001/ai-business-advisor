@@ -3,88 +3,110 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reuben AI // Central Command</title>
+  <title>Reuben AI // Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    /* Ensure inputs are always clickable */
-    input { pointer-events: auto; }
-  </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
+<body class="bg-gray-950 text-gray-100 min-h-screen flex">
 
   <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-[100] flex items-center justify-center p-4">
     <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
       <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // LOGIN</h2>
-      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 outline-none focus:border-emerald-500 text-white">
-      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 outline-none focus:border-emerald-500 text-white">
+      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 focus:border-emerald-500 outline-none text-white">
+      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 focus:border-emerald-500 outline-none text-white">
       <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold hover:bg-emerald-500 transition">Access System</button>
     </div>
   </div>
 
   <div id="app" class="hidden flex w-full h-screen">
-    <div id="sidebar" class="hidden md:flex w-64 bg-gray-900 border-r border-gray-800 p-6 flex-col justify-between">
-      <h1 class="text-xl font-bold text-emerald-400">REUBEN AI</h1>
-      <button onclick="handleLogout()" class="text-red-400 hover:text-red-300">Logout</button>
+    
+    <div id="sidebar" class="hidden md:flex flex-col w-64 bg-gray-900 border-r border-gray-800 p-4 justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-emerald-400 mb-8 px-2">REUBEN AI</h1>
+        <nav class="space-y-2">
+          <button onclick="resetChat()" class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition"><span>+</span> New Chat</button>
+          <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">🔍 Search Chats</button>
+          <button class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">📚 Library</button>
+        </nav>
+        <div class="mt-8">
+          <p class="text-xs font-bold text-gray-500 px-2 mb-2">RECENTS</p>
+          <div class="space-y-1"><p class="text-sm p-2 text-gray-400 truncate cursor-pointer hover:bg-gray-800 rounded">Project Deployment...</p></div>
+        </div>
+      </div>
+      <div class="border-t border-gray-800 pt-4">
+        <button onclick="showView('settings')" class="flex items-center gap-3 w-full p-2 hover:bg-gray-800 rounded transition">⚙️ Settings</button>
+        <button onclick="handleLogout()" class="text-red-400 text-sm mt-2 px-2 hover:text-red-300">Logout</button>
+      </div>
     </div>
-    <main class="flex-1 p-8">
-      <h1 class="text-2xl text-emerald-400">Core Online</h1>
-      <div id="chatWindow" class="mt-6 bg-gray-900 p-4 h-64 border border-gray-800 rounded overflow-y-auto"></div>
-      <div class="mt-4 flex gap-2">
-        <input id="chatInput" type="text" placeholder="Command..." class="flex-1 bg-gray-800 p-3 rounded border border-gray-700 text-white">
-        <button onclick="sendMessage()" class="bg-emerald-600 px-6 py-3 rounded font-bold">Send</button>
+
+    <main class="flex-1 flex flex-col h-full">
+      <header class="p-4 flex items-center gap-4">
+        <button onclick="toggleSidebar()" class="md:hidden text-2xl">☰</button>
+        <h2 class="text-lg font-semibold">Core Online</h2>
+      </header>
+
+      <div id="chatView" class="flex-1 overflow-y-auto p-4 md:p-8">
+        <div id="chatWindow" class="max-w-2xl mx-auto space-y-4"></div>
+        <div class="max-w-2xl mx-auto mt-4 sticky bottom-0">
+          <div class="flex gap-2 bg-gray-900 p-2 rounded-lg border border-gray-800">
+            <input id="chatInput" type="text" placeholder="Enter command..." class="flex-1 bg-transparent p-2 outline-none text-white">
+            <button onclick="sendMessage()" class="bg-emerald-600 px-4 py-2 rounded font-bold hover:bg-emerald-500">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="settingsView" class="hidden flex-1 p-8">
+        <h2 class="text-2xl font-bold mb-6">Account Settings</h2>
+        <div class="bg-gray-900 p-6 rounded-lg border border-gray-800">
+            <p id="userEmail" class="text-gray-400"></p>
+        </div>
       </div>
     </main>
   </div>
 
   <script>
-    const sb = supabase.createClient(
-      "https://whvzdutfyydshamwfhvu.supabase.co", 
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"
-    );
+    const sb = supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo");
 
-    // Stop blinking by checking state once, not on a loop
-    function updateUI(session) {
-      if (session) {
-        document.getElementById('authOverlay').classList.add('hidden');
-        document.getElementById('app').classList.remove('hidden');
-      } else {
-        document.getElementById('authOverlay').classList.remove('hidden');
-        document.getElementById('app').classList.add('hidden');
-      }
+    // UI Toggle
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); }
+    function showView(view) {
+        document.getElementById('chatView').classList.add('hidden');
+        document.getElementById('settingsView').classList.add('hidden');
+        document.getElementById(view + 'View').classList.remove('hidden');
+        if(window.innerWidth < 768) toggleSidebar();
     }
+    function resetChat() { document.getElementById('chatWindow').innerHTML = ''; }
 
-    // Initialize Auth Listener
+    // Auth State (NO REFRESHES)
     sb.auth.onAuthStateChange((event, session) => {
-      updateUI(session);
-    });
-
-    // Check session on load
-    sb.auth.getSession().then(({ data: { session } }) => {
-      updateUI(session);
+        if (session) {
+            document.getElementById('authOverlay').classList.add('hidden');
+            document.getElementById('app').classList.remove('hidden');
+            document.getElementById('userEmail').innerText = "Logged in as: " + session.user.email;
+        } else {
+            document.getElementById('authOverlay').classList.remove('hidden');
+            document.getElementById('app').classList.add('hidden');
+        }
     });
 
     async function handleLogin() {
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) alert("Login Error: " + error.message);
+      const { error } = await sb.auth.signInWithPassword({ email: document.getElementById('email').value, password: document.getElementById('password').value });
+      if (error) alert(error.message);
     }
-
-    async function handleLogout() {
-      await sb.auth.signOut();
-      // Don't reload, the listener will update the UI automatically
-    }
+    
+    async function handleLogout() { await sb.auth.signOut(); }
 
     async function sendMessage() {
       const input = document.getElementById('chatInput');
-      const msg = input.value;
-      if (!msg) return;
+      if (!input.value) return;
+      const { data: { user } } = await sb.auth.getUser();
       
-      const { data, error } = await sb.functions.invoke('reuben-ai', { body: { message: msg } });
-      if (!error) {
-        document.getElementById('chatWindow').innerHTML += `<p class="text-white">Reuben: ${data.reply}</p>`;
-      }
+      // Update UI immediately
+      document.getElementById('chatWindow').innerHTML += `<div class="p-3 bg-gray-800 ml-auto w-fit rounded-lg">${input.value}</div>`;
+      
+      const { data } = await sb.functions.invoke('reuben-ai', { body: { message: input.value } });
+      document.getElementById('chatWindow').innerHTML += `<div class="p-3 bg-emerald-900/20 w-fit rounded-lg">${data.reply}</div>`;
+      
       input.value = '';
     }
   </script>
