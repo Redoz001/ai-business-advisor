@@ -1,17 +1,15 @@
-import React from 'react';
-// 1. Import the new Reuben AI component
-import ReubenAI from './components/ReubenAI';
+import React, { useState } from 'react';
 
-function App() {
+export default function App() {
+  const [count, setCount] = useState(0);
+
   return (
-    <div className="app-container">
-      {/* Your existing layout elements can stay here */}
-      
-      {/* 2. Drop the AI component wherever you want it to appear */}
-      <ReubenAI />
-      
+    <div style={{ padding: '50px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+      <h1>Reuben AI Test</h1>
+      <p>If you see this, React is working.</p>
+      <button onClick={() => setCount(count + 1)}>
+        Count is: {count}
+      </button>
     </div>
   );
 }
-
-export default App;

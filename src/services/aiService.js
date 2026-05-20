@@ -1,35 +1,22 @@
-const SUPABASE_FUNCTION_URL =
-  "https://whvzdutfyydshamwfhvu.supabase.co/functions/v1/reuben-ai";
+import { supabase } from '../lib/supabase';
 
-async function forge(message) {
+export async function askReuben(message, sessionId = 'default-session') {
   try {
-    const res = await fetch(SUPABASE_FUNCTION_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ message }),
+    console.log("Invoking edge function 'reuben-ai' with:", { message, sessionId });
+    
+    const { data, error } = await supabase.functions.invoke('reuben-ai', {
+      body: { message, sessionId }
     });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      return {
-        type: "text",
-        content: data?.error || "Edge Function error",
-      };
+    
+    if (error) {
+      console.error("Supabase Function Error Details:", error);
+      throw error;
     }
-
-    return {
-      type: "text",
-      content: data.reply,
-    };
-  } catch (err) {
-    return {
-      type: "text",
-      content: "Network error: " + String(err),
-    };
+    
+    console.log("Edge function response:", data);
+    return data.reply;
+  } catch (error) {
+    console.error("AI Service Final Catch:", error);
+    return "I am experiencing a momentary connection lapse.";
   }
 }
-
-export default { forge };

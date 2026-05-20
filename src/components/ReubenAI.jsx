@@ -1,101 +1,73 @@
 import React, { useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { askReuben } from '../services/aiService';
 
 export default function ReubenAI() {
-  const [message, setMessage] = useState('');
-  const [response, setResponse] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [messages, setMessages] = useState([{ role: 'ai', content: 'System Ready. Type and hit Send.' }]);
+  const [input, setInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // Keep these configurations clean and explicit
-  const SUPABASE_URL = "https://whvzdutfyydshamwfhvu.supabase.co";
-  const FUNCTION_NAME = "reuben-ai";
-  const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo";
-
-  const handleSubmit = async (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!input.trim() || isProcessing) return;
 
-    setIsLoading(true);
-    setError('');
-    setResponse('');
+    const userText = input;
+    const userMsg = { role: 'user', content: userText };
+    
+    // 1. Update UI with User message
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsProcessing(true);
 
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ANON_KEY}`
-        },
-        body: JSON.stringify({ message: message.trim() })
-      });
+      // 2. Save User message to Supabase
+      await supabase.from('chat_messages').insert([{ role: 'user', content: userText }]);
 
-      const data = await res.json();
+      // 3. Get AI Reply
+      const aiReply = await askReuben(userText);
+      const aiMsg = { role: 'ai', content: aiReply };
 
-      if (!res.ok) {
-        throw new Error(data.error || `Server responded with status ${res.status}`);
-      }
-
-      setResponse(data.reply);
-    } catch (err) {
-      console.error("AI Communication Failure:", err);
-      setError(err.message || "Failed to establish context with Reuben AI.");
+      // 4. Update UI and Save AI message to Supabase
+      setMessages(prev => [...prev, aiMsg]);
+      await supabase.from('chat_messages').insert([{ role: 'ai', content: aiReply }]);
+      
+    } catch (error) {
+      console.error("Error in handleSend:", error);
+      setMessages(prev => [...prev, { role: 'ai', content: 'Error: Could not reach the AI.' }]);
     } finally {
-      setIsLoading(false);
+      setIsProcessing(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: '600px', margin: '2rem auto', padding: '1rem', fontFamily: 'sans-serif' }}>
-      <h2 style={{ marginBottom: '1rem' }}>🤖 Reuben AI Assistant</h2>
+    <div style={{ background: '#000', color: '#fff', padding: '20px', minHeight: '100vh' }}>
+      <h1>Reuben AI</h1>
       
-      {/* Interaction Form */}
-      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Ask Reuben AI something..."
-          disabled={isLoading}
-          style={{
-            flex: 1,
-            padding: '0.75rem',
-            borderRadius: '6px',
-            border: '1px solid #ccc',
-            fontSize: '1rem'
-          }}
+      <div style={{ border: '1px solid #333', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ margin: '10px 0', padding: '8px', borderBottom: '1px solid #222' }}>
+            <strong style={{ color: m.role === 'user' ? '#888' : '#00ffcc' }}>{m.role}: </strong>
+            {m.content}
+          </div>
+        ))}
+        {isProcessing && <div style={{ color: '#00ffcc' }}>Reuben is thinking...</div>}
+      </div>
+      
+      <form onSubmit={handleSend}>
+        <input 
+          style={{ width: '80%', padding: '10px', color: '#000' }}
+          value={input} 
+          onChange={(e) => setInput(e.target.value)} 
+          placeholder="Ask Reuben anything..."
         />
-        <button
-          type="submit"
-          disabled={isLoading || !message.trim()}
-          style={{
-            padding: '0.75rem 1.5rem',
-            borderRadius: '6px',
-            border: 'none',
-            backgroundColor: isLoading ? '#ccc' : '#0070f3',
-            color: '#fff',
-            fontSize: '1rem',
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            transition: 'background-color 0.2s'
-          }}
+        <button 
+          disabled={isProcessing}
+          type="submit" 
+          style={{ padding: '10px', marginLeft: '10px', cursor: 'pointer' }}
         >
-          {isLoading ? 'Thinking...' : 'Send'}
+          {isProcessing ? '...' : 'SEND'}
         </button>
       </form>
-
-      {/* Error Interface Output */}
-      {error && (
-        <div style={{ padding: '1rem', backgroundColor: '#fff5f5', color: '#e53e3e', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #fed7d7' }}>
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
-      {/* Response Interface Output */}
-      {response && (
-        <div style={{ padding: '1.25rem', backgroundColor: '#f7fafc', borderRadius: '6px', border: '1px solid #e2e8f0', lineHeight: '1.5' }}>
-          <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#4a5568' }}>Response:</strong>
-          <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#2d3748' }}>{response}</p>
-        </div>
-      )}
     </div>
   );
 }

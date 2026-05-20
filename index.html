@@ -1,97 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reuben AI // Production</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reuben AI // Autonomous Core</title>
+  </head>
+  <body class="bg-gray-950 text-white">
+    <div id="root"></div>
 
-  <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-50 flex items-center justify-center p-4">
-    <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800">
-      <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // AUTH</h2>
-      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 outline-none focus:border-emerald-500">
-      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 outline-none focus:border-emerald-500">
-      <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold hover:bg-emerald-500 transition">Access System</button>
-    </div>
-  </div>
-
-  <div id="app" class="hidden flex h-screen">
-    <aside id="sidebar" class="hidden md:flex w-64 bg-gray-900 border-r border-gray-800 p-6 flex-col justify-between">
-      <h1 class="text-xl font-bold text-emerald-400">REUBEN AI</h1>
-      <button onclick="handleLogout()" class="text-red-400 text-sm hover:underline">Logout</button>
-    </aside>
-
-    <main class="flex-1 p-8 overflow-y-auto">
-      <div id="chatView" class="max-w-2xl mx-auto h-full flex flex-col">
-        <div id="chatWindow" class="flex-1 bg-gray-900 p-4 border border-gray-800 rounded-xl mb-4 overflow-y-auto space-y-4"></div>
-        <div class="flex gap-2">
-          <input id="chatInput" type="text" class="flex-1 bg-gray-800 p-4 rounded-xl border border-gray-700 outline-none focus:border-emerald-500" placeholder="Ask anything...">
-          <button id="sendBtn" onclick="sendMessage()" class="bg-emerald-600 px-8 py-3 rounded-xl font-bold hover:bg-emerald-500 transition">Send</button>
-        </div>
-      </div>
-    </main>
-  </div>
-
-  <script>
-    const sb = supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo");
-
-    async function showApp(user) {
-      document.getElementById('authOverlay').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
-      
-      // Load initial history
-      const { data } = await sb.from('messages').select('*').order('created_at', { ascending: true });
-      data?.forEach(msg => renderMessage(msg));
-
-      // Real-time Subscription
-      sb.channel('messages').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-        renderMessage(payload.new);
-      }).subscribe();
-    }
-
-    function renderMessage(msg) {
-      const window = document.getElementById('chatWindow');
-      const div = document.createElement('div');
-      div.className = `p-3 rounded-lg ${msg.is_user ? 'bg-emerald-600/20 text-emerald-300 ml-auto' : 'bg-gray-800 text-white'} max-w-[80%]`;
-      div.innerText = msg.content;
-      window.appendChild(div);
-      window.scrollTop = window.scrollHeight;
-    }
-
-    async function sendMessage() {
-      const input = document.getElementById('chatInput');
-      const content = input.value.trim();
-      if (!content) return;
-      
-      input.value = '';
-      const { data: { user } } = await sb.auth.getUser();
-
-      // 1. Persist User Message
-      await sb.from('messages').insert({ content, is_user: true, user_id: user.id });
-
-      // 2. Invoke AI Brain
-      const { data, error } = await sb.functions.invoke('reuben-ai', { body: { message: content } });
-      
-      if (!error) {
-        await sb.from('messages').insert({ content: data.reply, is_user: false, user_id: user.id });
-      } else {
-        console.error("AI Error:", error);
-      }
-    }
-
-    // Auth listeners
-    sb.auth.onAuthStateChange((_, session) => session && showApp(session.user));
-    async function handleLogin() {
-      const { error } = await sb.auth.signInWithPassword({ 
-        email: document.getElementById('email').value, 
-        password: document.getElementById('password').value 
-      });
-      if (error) alert(error.message);
-    }
-    async function handleLogout() { await sb.auth.signOut(); location.reload(); }
-  </script>
-</body>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
