@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reuben AI // Central Command</title>
+  <title>Reuben AI // Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen">
+<body class="bg-gray-950 text-gray-100 min-h-screen flex">
 
   <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-50 flex items-center justify-center p-4">
     <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
@@ -18,51 +18,68 @@
     </div>
   </div>
 
-  <div id="app" class="hidden p-8 max-w-2xl mx-auto">
-    <h1 class="text-2xl font-bold text-emerald-400">System Access Granted</h1>
-    <p class="mt-2 text-gray-400">Reuben AI Core Online.</p>
+  <div id="app" class="hidden flex w-full">
     
-    <div id="chatWindow" class="mt-6 bg-gray-900 p-4 h-64 overflow-y-auto border border-gray-800 rounded">
-      <p class="text-gray-500">Awaiting input command...</p>
+    <div class="w-64 bg-gray-900 border-r border-gray-800 p-6 flex flex-col justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-emerald-400 mb-8">REUBEN AI</h1>
+        <nav class="space-y-4">
+          <button onclick="showView('chat')" class="block w-full text-left p-2 hover:bg-gray-800 rounded">Chat</button>
+          <button onclick="showView('settings')" class="block w-full text-left p-2 hover:bg-gray-800 rounded">Settings</button>
+        </nav>
+      </div>
+      <button onclick="handleLogout()" class="text-red-400 hover:text-red-300 text-sm">Logout</button>
     </div>
 
-    <div class="mt-4 flex gap-2">
-      <input id="chatInput" type="text" placeholder="Enter command..." class="flex-1 bg-gray-800 p-3 rounded text-white border border-gray-700 outline-none focus:border-emerald-500">
-      <button onclick="sendMessage()" class="bg-emerald-600 px-6 py-3 rounded font-bold hover:bg-emerald-500 transition">Send</button>
-    </div>
-    
-    <button onclick="handleLogout()" class="mt-6 text-red-400 hover:text-red-300">Logout</button>
+    <main id="mainContent" class="flex-1 p-8">
+      <div id="chatView" class="max-w-2xl mx-auto">
+        <div id="chatWindow" class="bg-gray-900 p-4 h-96 overflow-y-auto border border-gray-800 rounded mb-4">
+          <p class="text-gray-500">Reuben AI Core Online...</p>
+        </div>
+        <div class="flex gap-2">
+          <input id="chatInput" type="text" placeholder="Enter command..." class="flex-1 bg-gray-800 p-3 rounded border border-gray-700 outline-none">
+          <button onclick="sendMessage()" class="bg-emerald-600 px-6 py-3 rounded font-bold hover:bg-emerald-500">Send</button>
+        </div>
+      </div>
+
+      <div id="settingsView" class="hidden max-w-2xl mx-auto">
+        <h2 class="text-2xl font-bold mb-6">Account Settings</h2>
+        <div class="bg-gray-900 p-6 rounded border border-gray-800">
+          <p id="userEmail" class="text-gray-400"></p>
+          <button onclick="handleLogout()" class="mt-4 bg-red-900/30 text-red-400 px-4 py-2 rounded border border-red-900/50">Sign Out</button>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script>
-    const sb = supabase.createClient(
-      "https://whvzdutfyydshamwfhvu.supabase.co", 
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"
-    );
+    const sb = supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo");
 
-    function showApp() {
-      document.getElementById('authOverlay').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
+    // UI View Switching
+    function showView(view) {
+      document.getElementById('chatView').classList.add('hidden');
+      document.getElementById('settingsView').classList.add('hidden');
+      document.getElementById(view + 'View').classList.remove('hidden');
     }
 
-    function showLogin() {
-      document.getElementById('authOverlay').classList.remove('hidden');
-      document.getElementById('app').classList.add('hidden');
+    function showApp(user) {
+      document.getElementById('authOverlay').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      if (user) document.getElementById('userEmail').innerText = "Logged in as: " + user.email;
     }
 
     sb.auth.onAuthStateChange((event, session) => {
-      session ? showApp() : showLogin();
+      session ? showApp(session.user) : window.location.reload();
     });
 
     sb.auth.getSession().then(({ data: { session } }) => {
-      session ? showApp() : showLogin();
+      if (session) showApp(session.user);
     });
 
     async function handleLogin() {
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) alert("Login Error: " + error.message);
+      await sb.auth.signInWithPassword({ email, password });
     }
 
     async function handleLogout() {
@@ -73,22 +90,15 @@
     async function sendMessage() {
       const input = document.getElementById('chatInput');
       const chatWindow = document.getElementById('chatWindow');
-      const message = input.value;
-      if (!message) return;
+      if (!input.value) return;
 
-      chatWindow.innerHTML += `<p class="mt-2 text-emerald-300">User: ${message}</p>`;
+      chatWindow.innerHTML += `<p class="mt-2 text-emerald-300">User: ${input.value}</p>`;
+      const message = input.value;
       input.value = '';
 
-      // Invoking 'reuben-ai'
-      const { data, error } = await sb.functions.invoke('reuben-ai', {
-        body: { message: message },
-      });
-
-      if (error) {
-        chatWindow.innerHTML += `<p class="mt-2 text-red-500">Error: ${error.message}</p>`;
-      } else {
-        chatWindow.innerHTML += `<p class="mt-2 text-white">Reuben: ${data.reply}</p>`;
-      }
+      const { data, error } = await sb.functions.invoke('reuben-ai', { body: { message } });
+      if (error) chatWindow.innerHTML += `<p class="mt-2 text-red-500">Error: ${error.message}</p>`;
+      else chatWindow.innerHTML += `<p class="mt-2 text-white">Reuben: ${data.reply}</p>`;
       chatWindow.scrollTop = chatWindow.scrollHeight;
     }
   </script>
