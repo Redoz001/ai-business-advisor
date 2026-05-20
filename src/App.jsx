@@ -1,25 +1,17 @@
-import { useEffect, useState } from "react";
-import { supabase } from "./lib/supabase.js";
-import Auth from "./Auth.jsx";
-import Chat from "./chat.jsx"; // Changed from "./Chat.jsx" to "./chat.jsx"
+import React from 'react';
+// 1. Import the new Reuben AI component
+import ReubenAI from './components/ReubenAI';
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [activeChat, setActiveChat] = useState(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
-
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
-  }, []);
-
-  if (!user) return <Auth setUser={setUser} />;
-
+function App() {
   return (
-    <Chat user={user} activeChat={activeChat} />
+    <div className="app-container">
+      {/* Your existing layout elements can stay here */}
+      
+      {/* 2. Drop the AI component wherever you want it to appear */}
+      <ReubenAI />
+      
+    </div>
   );
 }
+
+export default App;
