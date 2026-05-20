@@ -2,59 +2,56 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Reuben AI Professional</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reuben AI // Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="bg-gray-950 text-gray-100 h-screen flex overflow-hidden">
+<body class="bg-gray-950 text-gray-100 h-screen flex overflow-hidden font-sans">
 
-    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
-        <div class="p-4 border-b border-gray-800">
-            <h1 class="text-emerald-400 font-bold tracking-wider">REUBEN AI</h1>
-        </div>
-        <nav class="flex-1 p-4">
-            <button onclick="app.createNewChat()" class="w-full bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 p-3 rounded-lg text-sm font-medium transition-all">+ New Conversation</button>
-        </nav>
+    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col p-4">
+        <h1 class="text-emerald-400 font-bold text-xl mb-8 tracking-tight">REUBEN AI</h1>
+        <button onclick="ReubenApp.newChat()" class="w-full bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 p-3 rounded-lg text-sm font-medium transition-all border border-emerald-600/20">
+            + New Conversation
+        </button>
     </aside>
 
     <main class="flex-1 flex flex-col bg-gray-950">
-        <div id="chat-stream" class="flex-1 overflow-y-auto p-6 space-y-6">
-            </div>
+        <div id="chat-stream" class="flex-1 overflow-y-auto p-6 space-y-6"></div>
 
-        <footer class="p-4 bg-gray-900 border-t border-gray-800">
-            <div class="max-w-3xl mx-auto flex gap-2">
-                <input id="message-input" type="text" placeholder="Type a message..." class="flex-1 bg-gray-800 text-white rounded-lg p-3 border border-gray-700 outline-none focus:border-emerald-500">
-                <button onclick="app.sendMessage()" id="send-btn" class="bg-emerald-600 hover:bg-emerald-500 px-6 rounded-lg font-bold">Send</button>
+        <div class="p-4 bg-gray-900 border-t border-gray-800">
+            <div class="max-w-3xl mx-auto relative">
+                <input id="message-input" type="text" placeholder="Type a message..." class="w-full bg-gray-800 text-white rounded-xl p-4 pr-16 border border-gray-700 outline-none focus:border-emerald-500 transition-colors">
+                <button onclick="ReubenApp.sendMessage()" class="absolute right-2 top-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold">Send</button>
             </div>
-        </footer>
+        </div>
     </main>
 
     <script>
-        const app = {
-            sb: supabase.createClient("YOUR_SUPABASE_URL", "YOUR_SUPABASE_ANON_KEY"),
+        const ReubenApp = {
+            // Configuration
+            sb: supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo"),
             sessionId: crypto.randomUUID(),
-            
+
             init() {
                 this.setupRealtime();
-                this.loadMessages();
+                this.loadExistingMessages();
                 document.getElementById('message-input').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') this.sendMessage();
                 });
             },
 
-            async loadMessages() {
-                const { data } = await this.sb.from('messages')
+            async loadExistingMessages() {
+                const { data, error } = await this.sb.from('messages')
                     .select('*').eq('session_id', this.sessionId)
                     .order('created_at', { ascending: true });
-                
                 if (data) data.forEach(msg => this.renderMessage(msg));
             },
 
             setupRealtime() {
-                this.sb.channel('public:messages')
-                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-                        this.renderMessage(payload.new);
-                    }).subscribe();
+                this.sb.channel('messages').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+                    this.renderMessage(payload.new);
+                }).subscribe();
             },
 
             async sendMessage() {
@@ -62,38 +59,39 @@
                 const content = input.value.trim();
                 if (!content) return;
 
-                input.value = ''; // Reset UI immediately
-                
+                input.value = '';
                 const { error } = await this.sb.from('messages').insert({
                     session_id: this.sessionId,
                     content,
-                    is_user: true,
-                    user_id: (await this.sb.auth.getUser()).data.user?.id
+                    is_user: true
                 });
 
-                if (error) console.error("Message failed to send", error);
+                if (error) {
+                    console.error("Database Error:", error);
+                    alert("Message failed to send. Check console for details.");
+                }
             },
 
             renderMessage(msg) {
-                const chat = document.getElementById('chat-stream');
+                const stream = document.getElementById('chat-stream');
                 const div = document.createElement('div');
                 div.className = `flex ${msg.is_user ? 'justify-end' : 'justify-start'}`;
                 div.innerHTML = `
-                    <div class="${msg.is_user ? 'bg-emerald-600' : 'bg-gray-800'} p-3 rounded-2xl max-w-md shadow-sm">
+                    <div class="${msg.is_user ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-200'} p-4 rounded-2xl max-w-md shadow-lg">
                         ${msg.content}
                     </div>
                 `;
-                chat.appendChild(div);
-                chat.scrollTop = chat.scrollHeight;
+                stream.appendChild(div);
+                stream.scrollTop = stream.scrollHeight;
             },
 
-            createNewChat() {
+            newChat() {
                 this.sessionId = crypto.randomUUID();
                 document.getElementById('chat-stream').innerHTML = '';
             }
         };
 
-        app.init();
+        ReubenApp.init();
     </script>
 </body>
 </html>
