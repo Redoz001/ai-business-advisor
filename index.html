@@ -12,14 +12,13 @@
   <div id="authOverlay" class="fixed inset-0 bg-gray-950 z-50 flex items-center justify-center p-4">
     <div class="max-w-sm w-full bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl">
       <h2 class="text-2xl font-bold mb-6 text-emerald-400">REUBEN AI // LOGIN</h2>
-      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 outline-none focus:border-emerald-500">
-      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 outline-none focus:border-emerald-500">
+      <input type="email" id="email" placeholder="Email" class="w-full bg-gray-800 p-3 rounded mb-4 border border-gray-700 outline-none">
+      <input type="password" id="password" placeholder="Password" class="w-full bg-gray-800 p-3 rounded mb-6 border border-gray-700 outline-none">
       <button onclick="handleLogin()" class="w-full bg-emerald-600 py-3 rounded font-bold hover:bg-emerald-500 transition">Access System</button>
     </div>
   </div>
 
   <div id="app" class="hidden flex w-full">
-    
     <div class="w-64 bg-gray-900 border-r border-gray-800 p-6 flex flex-col justify-between">
       <div>
         <h1 class="text-xl font-bold text-emerald-400 mb-8">REUBEN AI</h1>
@@ -33,21 +32,15 @@
 
     <main id="mainContent" class="flex-1 p-8">
       <div id="chatView" class="max-w-2xl mx-auto">
-        <div id="chatWindow" class="bg-gray-900 p-4 h-96 overflow-y-auto border border-gray-800 rounded mb-4">
-          <p class="text-gray-500">Reuben AI Core Online...</p>
-        </div>
+        <div id="chatWindow" class="bg-gray-900 p-4 h-96 overflow-y-auto border border-gray-800 rounded mb-4"></div>
         <div class="flex gap-2">
           <input id="chatInput" type="text" placeholder="Enter command..." class="flex-1 bg-gray-800 p-3 rounded border border-gray-700 outline-none">
           <button onclick="sendMessage()" class="bg-emerald-600 px-6 py-3 rounded font-bold hover:bg-emerald-500">Send</button>
         </div>
       </div>
-
       <div id="settingsView" class="hidden max-w-2xl mx-auto">
         <h2 class="text-2xl font-bold mb-6">Account Settings</h2>
-        <div class="bg-gray-900 p-6 rounded border border-gray-800">
-          <p id="userEmail" class="text-gray-400"></p>
-          <button onclick="handleLogout()" class="mt-4 bg-red-900/30 text-red-400 px-4 py-2 rounded border border-red-900/50">Sign Out</button>
-        </div>
+        <p id="userEmail" class="text-gray-400"></p>
       </div>
     </main>
   </div>
@@ -55,52 +48,56 @@
   <script>
     const sb = supabase.createClient("https://whvzdutfyydshamwfhvu.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo");
 
-    // UI View Switching
+    async function showApp(user) {
+      document.getElementById('authOverlay').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      document.getElementById('userEmail').innerText = "Logged in as: " + user.email;
+      loadMessages();
+    }
+
+    async function loadMessages() {
+      const { data } = await sb.from('messages').select('*').order('created_at', { ascending: true });
+      const window = document.getElementById('chatWindow');
+      window.innerHTML = '';
+      data?.forEach(msg => {
+        window.innerHTML += `<p class="mt-2 ${msg.is_user ? 'text-emerald-300' : 'text-white'}">${msg.is_user ? 'User' : 'Reuben'}: ${msg.content}</p>`;
+      });
+      window.scrollTop = window.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const msg = input.value;
+      if (!msg) return;
+
+      // 1. Save User Message
+      await sb.from('messages').insert({ content: msg, is_user: true, user_id: sb.auth.getUser().then(u => u.data.user.id) });
+      
+      // 2. Get AI Response
+      const { data } = await sb.functions.invoke('reuben-ai', { body: { message: msg } });
+      
+      // 3. Save AI Response
+      await sb.from('messages').insert({ content: data.reply, is_user: false, user_id: sb.auth.getUser().then(u => u.data.user.id) });
+      
+      input.value = '';
+      loadMessages();
+    }
+
     function showView(view) {
       document.getElementById('chatView').classList.add('hidden');
       document.getElementById('settingsView').classList.add('hidden');
       document.getElementById(view + 'View').classList.remove('hidden');
     }
 
-    function showApp(user) {
-      document.getElementById('authOverlay').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
-      if (user) document.getElementById('userEmail').innerText = "Logged in as: " + user.email;
-    }
-
-    sb.auth.onAuthStateChange((event, session) => {
-      session ? showApp(session.user) : window.location.reload();
-    });
-
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (session) showApp(session.user);
-    });
-
+    sb.auth.onAuthStateChange((e, session) => session ? showApp(session.user) : window.location.reload());
+    sb.auth.getSession().then(({ data: { session } }) => { if (session) showApp(session.user); });
+    
     async function handleLogin() {
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      await sb.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email: document.getElementById('email').value, password: document.getElementById('password').value });
+      if (error) alert(error.message);
     }
-
-    async function handleLogout() {
-      await sb.auth.signOut();
-      window.location.reload();
-    }
-
-    async function sendMessage() {
-      const input = document.getElementById('chatInput');
-      const chatWindow = document.getElementById('chatWindow');
-      if (!input.value) return;
-
-      chatWindow.innerHTML += `<p class="mt-2 text-emerald-300">User: ${input.value}</p>`;
-      const message = input.value;
-      input.value = '';
-
-      const { data, error } = await sb.functions.invoke('reuben-ai', { body: { message } });
-      if (error) chatWindow.innerHTML += `<p class="mt-2 text-red-500">Error: ${error.message}</p>`;
-      else chatWindow.innerHTML += `<p class="mt-2 text-white">Reuben: ${data.reply}</p>`;
-      chatWindow.scrollTop = chatWindow.scrollHeight;
-    }
+    
+    async function handleLogout() { await sb.auth.signOut(); window.location.reload(); }
   </script>
 </body>
 </html>
