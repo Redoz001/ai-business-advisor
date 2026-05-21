@@ -1,73 +1,133 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { askReuben } from '../services/aiService';
 
-export default function ReubenAI() {
-  const [messages, setMessages] = useState([{ role: 'ai', content: 'System Ready. Type and hit Send.' }]);
+export default function ReubenAI({ session }) {
+
+  const [messages, setMessages] = useState([
+    { role: 'ai', content: 'System online. Ready.' }
+  ]);
+
   const [input, setInput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSend = async (e) => {
+  const send = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isProcessing) return;
+    if (!input.trim() || loading) return;
 
-    const userText = input;
-    const userMsg = { role: 'user', content: userText };
-    
-    // 1. Update UI with User message
-    setMessages(prev => [...prev, userMsg]);
+    const userMsg = { role: 'user', content: input };
+
+    const updated = [...messages, userMsg];
+
+    setMessages(updated);
     setInput('');
-    setIsProcessing(true);
+    setLoading(true);
 
     try {
-      // 2. Save User message to Supabase
-      await supabase.from('chat_messages').insert([{ role: 'user', content: userText }]);
+      const reply = await askReuben(
+        input,
+        session?.user?.id,
+        updated
+      );
 
-      // 3. Get AI Reply
-      const aiReply = await askReuben(userText);
-      const aiMsg = { role: 'ai', content: aiReply };
+      setMessages(prev => [
+        ...prev,
+        { role: 'ai', content: reply }
+      ]);
 
-      // 4. Update UI and Save AI message to Supabase
-      setMessages(prev => [...prev, aiMsg]);
-      await supabase.from('chat_messages').insert([{ role: 'ai', content: aiReply }]);
-      
-    } catch (error) {
-      console.error("Error in handleSend:", error);
-      setMessages(prev => [...prev, { role: 'ai', content: 'Error: Could not reach the AI.' }]);
+    } catch (err) {
+      setMessages(prev => [
+        ...prev,
+        { role: 'ai', content: 'Connection error.' }
+      ]);
     } finally {
-      setIsProcessing(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ background: '#000', color: '#fff', padding: '20px', minHeight: '100vh' }}>
-      <h1>Reuben AI</h1>
-      
-      <div style={{ border: '1px solid #333', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+    <div style={styles.wrap}>
+
+      <div style={styles.header}>
+        <h2>Reuben AI Chat</h2>
+        <p>{session?.user?.email}</p>
+      </div>
+
+      <div style={styles.chat}>
         {messages.map((m, i) => (
-          <div key={i} style={{ margin: '10px 0', padding: '8px', borderBottom: '1px solid #222' }}>
-            <strong style={{ color: m.role === 'user' ? '#888' : '#00ffcc' }}>{m.role}: </strong>
-            {m.content}
+          <div key={i} style={styles.msg(m.role)}>
+            <b>{m.role}:</b> {m.content}
           </div>
         ))}
-        {isProcessing && <div style={{ color: '#00ffcc' }}>Reuben is thinking...</div>}
+
+        {loading && <p>Thinking...</p>}
       </div>
-      
-      <form onSubmit={handleSend}>
-        <input 
-          style={{ width: '80%', padding: '10px', color: '#000' }}
-          value={input} 
-          onChange={(e) => setInput(e.target.value)} 
-          placeholder="Ask Reuben anything..."
+
+      <form onSubmit={send} style={styles.inputBox}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask anything..."
+          style={styles.input}
         />
-        <button 
-          disabled={isProcessing}
-          type="submit" 
-          style={{ padding: '10px', marginLeft: '10px', cursor: 'pointer' }}
-        >
-          {isProcessing ? '...' : 'SEND'}
+
+        <button style={styles.btn}>
+          SEND
         </button>
       </form>
+
     </div>
   );
 }
+
+const styles = {
+  wrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    background: '#000',
+    border: '1px solid #222',
+    borderRadius: 12
+  },
+
+  header: {
+    padding: 20,
+    borderBottom: '1px solid #222'
+  },
+
+  chat: {
+    flex: 1,
+    padding: 20,
+    overflowY: 'auto'
+  },
+
+  msg: (role) => ({
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 8,
+    background: role === 'user' ? '#111' : '#001a16'
+  }),
+
+  inputBox: {
+    display: 'flex',
+    gap: 10,
+    padding: 15,
+    borderTop: '1px solid #222'
+  },
+
+  input: {
+    flex: 1,
+    padding: 12,
+    background: '#111',
+    border: '1px solid #333',
+    color: '#fff',
+    borderRadius: 8
+  },
+
+  btn: {
+    padding: 12,
+    background: '#fff',
+    color: '#000',
+    borderRadius: 8,
+    border: 'none'
+  }
+};
