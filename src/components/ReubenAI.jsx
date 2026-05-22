@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { askReuben } from '../services/aiService';
+import { supabase } from '../lib/supabase.js';
 
 export default function ReubenAI({ session }) {
 
   // =========================
-  // STATE (UNCHANGED + ADDITIONS)
+  // STATE
   // =========================
   const [messages, setMessages] = useState([
     {
@@ -16,16 +17,16 @@ export default function ReubenAI({ session }) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // 🧠 MEMORY (NEW - local session memory)
+  // 🧠 MEMORY (local session memory)
   const [memory, setMemory] = useState([]);
 
   const bottomRef = useRef(null);
 
-  // 🎤 VOICE INPUT (NEW)
+  // 🎤 VOICE INPUT
   const recognitionRef = useRef(null);
 
   // =========================
-  // AUTO SCROLL (UNCHANGED)
+  // AUTO SCROLL
   // =========================
   useEffect(() => {
     bottomRef.current?.scrollIntoView({
@@ -34,24 +35,57 @@ export default function ReubenAI({ session }) {
   }, [messages, isLoading]);
 
   // =========================
-  // LOCAL AI RESPONSES (UNCHANGED BUT ENHANCED)
+  // LOAD CHAT HISTORY (FIXED)
+  // =========================
+  useEffect(() => {
+
+    const loadHistory = async () => {
+
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('user_id', session?.user?.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error("History load error:", error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setMessages(
+          data.map((m) => ({
+            role: m.role === 'assistant' ? 'ai' : 'user',
+            content: m.content
+          }))
+        );
+      }
+    };
+
+    loadHistory();
+
+  }, [session?.user?.id]);
+
+  // =========================
+  // LOCAL AI RESPONSES
   // =========================
   const handleLocalAIResponses = (message) => {
+
     const msg = message.toLowerCase();
 
     if (msg.includes("who are you")) {
-      return "I am Reuben AI, your assistant inside this system, designed to help you chat, automate tasks, and evolve with memory and tools.";
+      return "I am Reuben AI, your assistant inside this system, designed to help you chat, automate tasks, and evolve with memory and intelligence.";
     }
 
     if (msg.includes("who created you")) {
-      return "I was created by Redoz Muriz using React, Supabase, and AI API integration as a custom SaaS assistant system.";
+      return "I was created by Redoz Muriz using React, Supabase, and Groq/OpenAI API integration as a custom SaaS AI system.";
     }
 
     return null;
   };
 
   // =========================
-  // 🧠 MEMORY UPDATE SYSTEM (NEW)
+  // MEMORY SYSTEM
   // =========================
   const updateMemory = (userMsg, aiMsg) => {
     const newMemory = {
@@ -60,11 +94,11 @@ export default function ReubenAI({ session }) {
       time: Date.now()
     };
 
-    setMemory(prev => [...prev.slice(-10), newMemory]); // keep last 10
+    setMemory(prev => [...prev.slice(-10), newMemory]);
   };
 
   // =========================
-  // 🎤 VOICE INPUT (NEW FEATURE)
+  // VOICE INPUT (FIXED)
   // =========================
   const startVoiceInput = () => {
 
@@ -79,10 +113,15 @@ export default function ReubenAI({ session }) {
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
+    recognition.continuous = false;
 
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       setInput(transcript);
+    };
+
+    recognition.onend = () => {
+      recognition.stop();
     };
 
     recognition.start();
@@ -90,7 +129,7 @@ export default function ReubenAI({ session }) {
   };
 
   // =========================
-  // SEND MESSAGE (UPGRADED ONLY)
+  // SEND MESSAGE (FIXED + MEMORY ENHANCED)
   // =========================
   const handleSend = async (e) => {
 
@@ -112,7 +151,7 @@ export default function ReubenAI({ session }) {
     try {
 
       // =========================
-      // LOCAL RESPONSE FIRST
+      // LOCAL RESPONSES FIRST
       // =========================
       const localReply = handleLocalAIResponses(userMessage);
 
@@ -128,23 +167,29 @@ export default function ReubenAI({ session }) {
       }
 
       // =========================
+      // BUILD MEMORY CONTEXT (FIXED)
+      // =========================
+      const memoryContext = memory.flatMap(m => ([
+        { role: 'user', content: m.user },
+        { role: 'assistant', content: m.ai }
+      ]));
+
+      // =========================
       // REAL AI CALL
       // =========================
       const reply = await askReuben(
         userMessage,
         session?.user?.id,
-        updatedMessages,
-        memory // 🧠 memory passed for future AI upgrade
+        [...updatedMessages, ...memoryContext]
       );
 
-      const finalReply = reply || 'No response received.';
+      const finalReply = reply || "No response received.";
 
       setMessages(prev => [
         ...prev,
         { role: 'ai', content: finalReply }
       ]);
 
-      // 🧠 save memory
       updateMemory(userMessage, finalReply);
 
     } catch (error) {
@@ -204,6 +249,7 @@ export default function ReubenAI({ session }) {
         )}
 
         <div ref={bottomRef}></div>
+
       </div>
 
       {/* INPUT AREA */}
@@ -223,7 +269,7 @@ export default function ReubenAI({ session }) {
             className="flex-1 bg-zinc-900 border border-zinc-700 text-white rounded-xl px-4 py-3 outline-none focus:border-[#00ffcc]"
           />
 
-          {/* 🎤 VOICE BUTTON (NEW) */}
+          {/* VOICE */}
           <button
             type="button"
             onClick={startVoiceInput}
