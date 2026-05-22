@@ -5,56 +5,102 @@ import Login from './components/Login.jsx';
 import ReubenAI from './components/ReubenAI.jsx';
 
 export default function App() {
+
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activePage, setActivePage] = useState('dashboard');
 
+  const [activePage, setActivePage] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // =========================
+  // AUTH HANDLER
+  // =========================
   useEffect(() => {
+
     supabase.auth.getSession()
-      .then(({ data: { session } }) => setSession(session))
+      .then(({ data: { session } }) => {
+        setSession(session);
+      })
+      .catch((err) => console.error(err))
       .finally(() => setLoading(false));
 
     const { data: { subscription } } =
-      supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
+      supabase.auth.onAuthStateChange((_event, currentSession) => {
+        setSession(currentSession);
         setLoading(false);
       });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
+
   }, []);
 
-  const logout = async () => {
+  // =========================
+  // LOGOUT
+  // =========================
+  const handleLogout = async () => {
     await supabase.auth.signOut();
   };
 
+  // =========================
+  // LOADING SCREEN
+  // =========================
   if (loading) {
     return (
-      <div style={styles.loading}>
-        <h2>INITIALIZING SYSTEM</h2>
-        <p>Checking authentication...</p>
+      <div className="h-screen flex items-center justify-center bg-black text-[#00ffcc] font-mono">
+        [ INITIALIZING REUBEN AI... ]
       </div>
     );
   }
 
-  if (!session) return <Login />;
+  // =========================
+  // LOGIN SCREEN
+  // =========================
+  if (!session) {
+    return <Login />;
+  }
 
+  // =========================
+  // PAGE CONTENT
+  // =========================
   const renderPage = () => {
+
     switch (activePage) {
 
       case 'dashboard':
         return (
-          <div>
-            <h1>Dashboard</h1>
+          <div className="space-y-4">
 
-            <div style={styles.card}>
-              <h3>System Status</h3>
-              <p>Online ✅</p>
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+
+            <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+              <h2 className="font-semibold">Welcome 👋</h2>
+
+              <p className="text-sm text-zinc-400">
+                Your AI SaaS system is running.
+              </p>
             </div>
 
-            <div style={styles.card}>
-              <h3>User</h3>
-              <p>{session.user.email}</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+                <h3 className="text-sm text-zinc-400">Status</h3>
+                <p className="text-green-400">Online</p>
+              </div>
+
+              <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+                <h3 className="text-sm text-zinc-400">User</h3>
+                <p>{session.user.email}</p>
+              </div>
+
+              <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+                <h3 className="text-sm text-zinc-400">Plan</h3>
+                <p>Free Tier</p>
+              </div>
+
             </div>
+
           </div>
         );
 
@@ -64,9 +110,14 @@ export default function App() {
       case 'history':
         return (
           <div>
-            <h1>History</h1>
-            <div style={styles.card}>
-              <p>Chat history will appear here (Supabase-ready).</p>
+            <h1 className="text-2xl font-bold mb-4">
+              History
+            </h1>
+
+            <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+              <p className="text-zinc-400">
+                No history system connected yet.
+              </p>
             </div>
           </div>
         );
@@ -74,129 +125,136 @@ export default function App() {
       case 'settings':
         return (
           <div>
-            <h1>Settings</h1>
 
-            <div style={styles.card}>
-              <p>{session.user.email}</p>
+            <h1 className="text-2xl font-bold mb-4">
+              Settings
+            </h1>
+
+            <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 space-y-3">
+
+              <p>Email: {session.user.email}</p>
+
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
+              >
+                Logout
+              </button>
+
             </div>
 
-            <button onClick={logout} style={styles.btn}>
-              Logout
-            </button>
           </div>
         );
+
+      default:
+        return <ReubenAI session={session} />;
     }
   };
 
+  // =========================
+  // MAIN UI
+  // =========================
   return (
-    <div style={styles.app}>
+
+    <div className="flex h-screen bg-black text-white overflow-hidden">
 
       {/* SIDEBAR */}
-      <div style={styles.sidebar}>
-        <h2 style={styles.logo}>REUBEN AI</h2>
+      <div
+        className={`
+          fixed md:relative z-50 w-56 h-screen bg-zinc-950 border-r border-zinc-800 p-4
+          transition-transform duration-200
+          ${sidebarOpen
+            ? "translate-x-0"
+            : "-translate-x-full md:translate-x-0"}
+        `}
+      >
 
-        <button onClick={() => setActivePage('dashboard')} style={styles.menuBtn}>
+        {/* LOGO */}
+        <h2 className="text-[#00ffcc] font-bold text-2xl mb-6">
+          Reuben AI
+        </h2>
+
+        {/* DASHBOARD */}
+        <button
+          onClick={() => {
+            setActivePage('dashboard');
+            setSidebarOpen(false);
+          }}
+          className="block w-full text-left p-3 hover:bg-zinc-900 rounded-lg transition"
+        >
           Dashboard
         </button>
 
-        <button onClick={() => setActivePage('chat')} style={styles.menuBtn}>
+        {/* CHAT */}
+        <button
+          onClick={() => {
+            setActivePage('chat');
+            setSidebarOpen(false);
+          }}
+          className="block w-full text-left p-3 hover:bg-zinc-900 rounded-lg transition"
+        >
           Chat
         </button>
 
-        <button onClick={() => setActivePage('history')} style={styles.menuBtn}>
+        {/* HISTORY */}
+        <button
+          onClick={() => {
+            setActivePage('history');
+            setSidebarOpen(false);
+          }}
+          className="block w-full text-left p-3 hover:bg-zinc-900 rounded-lg transition"
+        >
           History
         </button>
 
-        <button onClick={() => setActivePage('settings')} style={styles.menuBtn}>
+        {/* SETTINGS */}
+        <button
+          onClick={() => {
+            setActivePage('settings');
+            setSidebarOpen(false);
+          }}
+          className="block w-full text-left p-3 hover:bg-zinc-900 rounded-lg transition"
+        >
           Settings
         </button>
 
-        <div style={{ marginTop: 'auto' }}>
-          <button onClick={logout} style={styles.logout}>
-            Logout
-          </button>
-        </div>
+        {/* LOGOUT */}
+        <button
+          onClick={handleLogout}
+          className="mt-10 w-full bg-red-500 hover:bg-red-600 text-white p-3 rounded-lg transition"
+        >
+          Logout
+        </button>
+
       </div>
 
-      {/* MAIN */}
-      <div style={styles.main}>
-        {renderPage()}
+      {/* MAIN AREA */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {/* TOP BAR */}
+        <div className="flex items-center p-3 border-b border-zinc-800 bg-black">
+
+          {/* MOBILE MENU */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="text-2xl mr-3 md:hidden text-white"
+          >
+            ☰
+          </button>
+
+          <h1 className="font-bold text-lg uppercase tracking-wide">
+            {activePage}
+          </h1>
+
+        </div>
+
+        {/* CONTENT */}
+        <div className="flex-1 p-4 overflow-hidden">
+          {renderPage()}
+        </div>
+
       </div>
 
     </div>
   );
 }
-
-const styles = {
-  app: {
-    display: 'flex',
-    height: '100vh',
-    background: '#000',
-    color: '#fff'
-  },
-
-  sidebar: {
-    width: 240,
-    background: '#111',
-    padding: 20,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    borderRight: '1px solid #222'
-  },
-
-  logo: {
-    color: '#00ffcc',
-    marginBottom: 20
-  },
-
-  menuBtn: {
-    padding: 12,
-    background: '#1a1a1a',
-    border: '1px solid #333',
-    color: '#fff',
-    borderRadius: 10,
-    cursor: 'pointer'
-  },
-
-  logout: {
-    padding: 12,
-    background: '#222',
-    border: '1px solid #444',
-    color: '#fff',
-    borderRadius: 10,
-    width: '100%'
-  },
-
-  main: {
-    flex: 1,
-    padding: 30,
-    overflowY: 'auto'
-  },
-
-  card: {
-    background: '#111',
-    border: '1px solid #222',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 15
-  },
-
-  btn: {
-    padding: 12,
-    background: '#fff',
-    color: '#000',
-    borderRadius: 8,
-    border: 'none'
-  },
-
-  loading: {
-    height: '100vh',
-    background: '#000',
-    color: '#00ffcc',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center'
-  }
-};

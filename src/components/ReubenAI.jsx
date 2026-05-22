@@ -1,133 +1,182 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { askReuben } from '../services/aiService';
 
 export default function ReubenAI({ session }) {
 
   const [messages, setMessages] = useState([
-    { role: 'ai', content: 'System online. Ready.' }
+    {
+      role: 'ai',
+      content: 'System Ready. Type a message.'
+    }
   ]);
 
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const send = async (e) => {
+  const bottomRef = useRef(null);
+
+  // =========================
+  // AUTO SCROLL
+  // =========================
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({
+      behavior: 'smooth'
+    });
+  }, [messages, isLoading]);
+
+  // =========================
+  // SEND MESSAGE
+  // =========================
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
 
-    const userMsg = { role: 'user', content: input };
+    if (!input.trim() || isLoading) return;
 
-    const updated = [...messages, userMsg];
+    const userMessage = input;
 
-    setMessages(updated);
+    // SAFE MESSAGE SNAPSHOT
+    const updatedMessages = [
+      ...messages,
+      {
+        role: 'user',
+        content: userMessage
+      }
+    ];
+
+    // UPDATE UI IMMEDIATELY
+    setMessages(updatedMessages);
+
     setInput('');
-    setLoading(true);
+    setIsLoading(true);
 
     try {
+
+      // AI REQUEST
       const reply = await askReuben(
-        input,
+        userMessage,
         session?.user?.id,
-        updated
+        updatedMessages
       );
 
+      // ADD AI RESPONSE
       setMessages(prev => [
         ...prev,
-        { role: 'ai', content: reply }
+        {
+          role: 'ai',
+          content: reply || 'No response received.'
+        }
       ]);
 
-    } catch (err) {
+    } catch (error) {
+
+      console.error(error);
+
       setMessages(prev => [
         ...prev,
-        { role: 'ai', content: 'Connection error.' }
+        {
+          role: 'ai',
+          content: 'Error: AI not responding.'
+        }
       ]);
+
     } finally {
-      setLoading(false);
+
+      setIsLoading(false);
+
     }
   };
 
   return (
-    <div style={styles.wrap}>
 
-      <div style={styles.header}>
-        <h2>Reuben AI Chat</h2>
-        <p>{session?.user?.email}</p>
-      </div>
+    <div className="flex flex-col h-[calc(100vh-90px)] bg-black text-white rounded-xl border border-zinc-800 overflow-hidden">
 
-      <div style={styles.chat}>
+      {/* CHAT MESSAGES */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
         {messages.map((m, i) => (
-          <div key={i} style={styles.msg(m.role)}>
-            <b>{m.role}:</b> {m.content}
+
+          <div
+            key={i}
+            className={`max-w-[85%] p-4 rounded-2xl text-sm shadow-lg ${
+              m.role === 'user'
+                ? 'ml-auto bg-[#00ffcc] text-black'
+                : 'mr-auto bg-zinc-900 border border-zinc-800 text-white'
+            }`}
+          >
+
+            <div className="text-xs opacity-70 mb-1 font-bold">
+              {m.role === 'user' ? 'YOU' : 'REUBEN AI'}
+            </div>
+
+            <div className="whitespace-pre-wrap break-words">
+              {m.content}
+            </div>
+
           </div>
+
         ))}
 
-        {loading && <p>Thinking...</p>}
+        {isLoading && (
+
+          <div className="mr-auto bg-zinc-900 border border-zinc-800 p-4 rounded-2xl text-sm animate-pulse">
+            REUBEN AI is thinking...
+          </div>
+
+        )}
+
+        <div ref={bottomRef}></div>
+
       </div>
 
-      <form onSubmit={send} style={styles.inputBox}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask anything..."
-          style={styles.input}
-        />
+      {/* INPUT BAR */}
+      <form
+        onSubmit={handleSend}
+        className="border-t border-zinc-800 bg-zinc-950 p-4"
+      >
 
-        <button style={styles.btn}>
-          SEND
-        </button>
+        <div className="flex items-center gap-3">
+
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask Reuben AI anything..."
+            className="
+              flex-1
+              bg-zinc-900
+              border
+              border-zinc-700
+              text-white
+              rounded-xl
+              px-4
+              py-3
+              outline-none
+              focus:border-[#00ffcc]
+            "
+          />
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="
+              px-5
+              py-3
+              rounded-xl
+              bg-[#00ffcc]
+              text-black
+              font-bold
+              hover:opacity-90
+              transition
+              disabled:opacity-50
+            "
+          >
+            SEND
+          </button>
+
+        </div>
+
       </form>
 
     </div>
   );
 }
-
-const styles = {
-  wrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    background: '#000',
-    border: '1px solid #222',
-    borderRadius: 12
-  },
-
-  header: {
-    padding: 20,
-    borderBottom: '1px solid #222'
-  },
-
-  chat: {
-    flex: 1,
-    padding: 20,
-    overflowY: 'auto'
-  },
-
-  msg: (role) => ({
-    padding: 10,
-    marginBottom: 10,
-    borderRadius: 8,
-    background: role === 'user' ? '#111' : '#001a16'
-  }),
-
-  inputBox: {
-    display: 'flex',
-    gap: 10,
-    padding: 15,
-    borderTop: '1px solid #222'
-  },
-
-  input: {
-    flex: 1,
-    padding: 12,
-    background: '#111',
-    border: '1px solid #333',
-    color: '#fff',
-    borderRadius: 8
-  },
-
-  btn: {
-    padding: 12,
-    background: '#fff',
-    color: '#000',
-    borderRadius: 8,
-    border: 'none'
-  }
-};
