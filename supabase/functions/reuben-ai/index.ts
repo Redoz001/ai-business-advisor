@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
     }
 
     // =========================
-    // PARSE BODY SAFELY
+    // PARSE BODY
     // =========================
     let body;
     try {
@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { message, userId, history = [] } = body || {};
+    const { message, userId, history = [] } = body;
 
     if (!message || !userId) {
       return new Response(
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     }
 
     // =========================
-    // ENV CHECK
+    // ENV VARIABLES
     // =========================
     const apiKey = Deno.env.get("GROQ_API_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -55,12 +55,15 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // =========================
-    // FORMAT HISTORY PROPERLY (FIX IMPORTANT BUG)
+    // CHAT ID (FIXED BUG)
+    // =========================
+    const chatId = body.chatId || crypto.randomUUID();
+
+    // =========================
+    // FORMAT HISTORY
     // =========================
     const formattedHistory = Array.isArray(history)
-      ? history
-          .filter((m) => m?.role && m?.content)
-          .slice(-20)
+      ? history.filter((m) => m?.role && m?.content).slice(-20)
       : [];
 
     const messages = [
@@ -77,7 +80,7 @@ Deno.serve(async (req) => {
     ];
 
     // =========================
-    // GROQ REQUEST (SAFE)
+    // GROQ REQUEST
     // =========================
     const response = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
@@ -88,7 +91,7 @@ Deno.serve(async (req) => {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "llama3-70b-8192",
+          model: "llama-3.3-70b-versatile",
           messages,
           temperature: 0.7,
         }),
@@ -101,7 +104,7 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          error: "AI model failed",
+          error: "AI request failed",
           details: errText,
         }),
         { status: 500, headers: corsHeaders }
@@ -115,33 +118,36 @@ Deno.serve(async (req) => {
       "I could not generate a response.";
 
     // =========================
-    // SAVE TO DATABASE (SAFE INSERT)
+    // SAVE TO SUPABASE (FIXED)
     // =========================
-    try {
-      await supabase.from("chat_messages").insert([
+    const { error: dbError } = await supabase
+      .from("chat_messages")
+      .insert([
         {
           user_id: userId,
-          chat_id: body.chatId || crypto.randomUUID(),
+          chat_id: chatId,
           role: "user",
           content: message,
         },
         {
           user_id: userId,
-          chat_id: body.chatId || crypto.randomUUID(),
+          chat_id: chatId,
           role: "assistant",
           content: reply,
         },
       ]);
-    } catch (dbErr) {
-      console.error("DB SAVE ERROR:", dbErr);
+
+    if (dbError) {
+      console.error("DB SAVE ERROR:", dbError);
     }
 
     // =========================
-    // SUCCESS RESPONSE
+    // RESPONSE
     // =========================
     return new Response(
       JSON.stringify({
         reply,
+        chatId,
       }),
       {
         status: 200,
@@ -151,13 +157,12 @@ Deno.serve(async (req) => {
         },
       }
     );
-
   } catch (error) {
     console.error("FATAL ERROR:", error);
 
     return new Response(
       JSON.stringify({
-        error: "Edge Function crashed",
+        error: "Server crashed",
         details: error.message,
       }),
       {
