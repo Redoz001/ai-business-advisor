@@ -1,6 +1,8 @@
+import { supabase } from "../lib/supabase.js";
+
 export async function getAIStream({ message }) {
   const res = await fetch(
-    "https://whvzdutfyydshamwfhvu.supabase.co/functions/v1/reuben-ai-stream",
+    "https://whvzdutfyydshamwfhvu.supabase.co/functions/v1/reuben-ai",
     {
       method: "POST",
       headers: {
@@ -10,24 +12,14 @@ export async function getAIStream({ message }) {
     }
   );
 
-  if (!res.body) throw new Error("No stream response");
+  if (!res.ok) {
+    throw new Error("API failed");
+  }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
+  const data = await res.json();
 
-  return {
-    async *[Symbol.asyncIterator]() {
-      let fullText = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        fullText += chunk;
-
-        yield fullText;
-      }
-    },
-  };
+  // fake stream (safe fallback)
+  return (async function* () {
+    yield data.reply;
+  })();
 }
