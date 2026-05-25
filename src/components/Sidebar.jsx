@@ -6,6 +6,8 @@ export default function Sidebar({
   setActiveChat,
   createNewChat,
 }) {
+  const safeSessions = Array.isArray(sessions) ? sessions : [];
+
   return (
     <div className="w-72 h-full bg-zinc-950 border-r border-zinc-800 flex flex-col">
 
@@ -27,7 +29,7 @@ export default function Sidebar({
 
       {/* CHAT LIST */}
       <div className="flex-1 overflow-y-auto px-2 space-y-2">
-        {sessions.map((s) => (
+        {safeSessions.map((s) => (
           <button
             key={s.id}
             onClick={() => setActiveChat(s.id)}
