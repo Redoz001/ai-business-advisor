@@ -1,34 +1,46 @@
-import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase.js';
+import React, { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase"; // Ensure this import path is correct
 
-export default function Sidebar({ isOpen, onClose, onSelectSession }) {
+export default function Sidebar({ onNewChat, onSelectSession, activeSession }) {
   const [sessions, setSessions] = useState([]);
 
+  // Fetch chats whenever the component mounts
   useEffect(() => {
-    const fetchSessions = async () => {
-      const { data } = await supabase
-        .from('chat_sessions')
-        .select('*')
-        .order('created_at', { ascending: false });
-      setSessions(data || []);
-    };
-    if (isOpen) fetchSessions();
-  }, [isOpen]);
+    fetchChats();
+  }, []);
+
+  const fetchChats = async () => {
+    const { data, error } = await supabase
+      .from("chats") // Make sure this matches your table name
+      .select("id, title, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) console.error("Error fetching chats:", error);
+    else setSessions(data || []);
+  };
 
   return (
-    <div className={`fixed top-0 left-0 h-full w-64 bg-gray-950 border-r border-gray-800 transition-transform ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="p-5">
-        <button onClick={onClose} className="text-white mb-6">Close</button>
-        <h2 className="text-gray-400 mb-4">Recent Chats</h2>
-        {sessions.map(s => (
-          <button 
-            key={s.id} 
-            onClick={() => onSelectSession(s.id)}
-            className="block w-full text-left p-2 hover:bg-gray-800 rounded text-sm text-white"
-          >
-            {s.title}
-          </button>
-        ))}
+    <div className="flex flex-col bg-zinc-950 h-full w-64 border-r border-zinc-800">
+      <div className="p-4 border-b border-zinc-800">
+        <h2 className="font-bold pt-12">Reuben AI</h2>
+      </div>
+
+      <div className="flex flex-col p-4 space-y-4 overflow-y-auto">
+        <button onClick={onNewChat} className="text-left font-bold text-[#00ffcc]">+ New Chat</button>
+        
+        {/* Render the list of chats */}
+        <div className="mt-4">
+          <h3 className="text-xs text-zinc-500 uppercase">Recent</h3>
+          {sessions.map((chat) => (
+            <button 
+              key={chat.id}
+              onClick={() => onSelectSession(chat.id)}
+              className={`block w-full text-left p-2 rounded hover:bg-zinc-800 truncate ${activeSession === chat.id ? 'bg-zinc-800 text-[#00ffcc]' : 'text-zinc-300'}`}
+            >
+              {chat.title || "New Conversation"}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
