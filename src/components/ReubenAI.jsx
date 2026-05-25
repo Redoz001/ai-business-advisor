@@ -9,10 +9,16 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
 
   const endRef = useRef(null);
 
+  // =========================
+  // SCROLL TO BOTTOM
+  // =========================
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  // =========================
+  // LOAD MESSAGES (FIXED)
+  // =========================
   useEffect(() => {
     if (!activeChat) {
       setMessages([]);
@@ -20,16 +26,24 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
     }
 
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("session_id", activeChat)
         .order("created_at", { ascending: true });
 
+      if (error) {
+        console.error(error);
+        return;
+      }
+
       setMessages(data || []);
     })();
   }, [activeChat]);
 
+  // =========================
+  // SEND MESSAGE
+  // =========================
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -38,8 +52,11 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
 
     let sessionId = activeChat;
 
+    // =========================
+    // CREATE SESSION IF NONE
+    // =========================
     if (!sessionId) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("chat_sessions")
         .insert([
           {
@@ -50,11 +67,25 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         .select()
         .single();
 
+      if (error) {
+        console.error(error);
+        return;
+      }
+
       sessionId = data.id;
       onNewSessionCreated?.(sessionId);
     }
 
-    setMessages((p) => [...p, { role: "user", content: text }]);
+    // =========================
+    // UI UPDATE (USER MESSAGE)
+    // =========================
+    setMessages((p) => [
+      ...p,
+      {
+        is_user: true,
+        content: text,
+      },
+    ]);
 
     setLoading(true);
 
@@ -64,7 +95,13 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
       let finalText = "";
 
       // placeholder assistant message
-      setMessages((p) => [...p, { role: "assistant", content: "" }]);
+      setMessages((p) => [
+        ...p,
+        {
+          is_user: false,
+          content: "",
+        },
+      ]);
 
       for await (const chunk of stream) {
         finalText = chunk;
@@ -72,27 +109,34 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         setMessages((prev) => {
           const copy = [...prev];
           copy[copy.length - 1] = {
-            role: "assistant",
+            is_user: false,
             content: finalText,
           };
           return copy;
         });
       }
 
-      await supabase.from("messages").insert([
+      // =========================
+      // SAVE TO SUPABASE (FIXED SCHEMA)
+      // =========================
+      const { error } = await supabase.from("messages").insert([
         {
           session_id: sessionId,
           user_id: user.id,
-          role: "user",
+          is_user: true,
           content: text,
         },
         {
           session_id: sessionId,
           user_id: user.id,
-          role: "assistant",
+          is_user: false,
           content: finalText,
         },
       ]);
+
+      if (error) {
+        console.error(error);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -100,14 +144,18 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
     }
   };
 
+  // =========================
+  // UI
+  // =========================
   return (
     <div className="flex flex-col h-full bg-black text-white">
+      {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((m, i) => (
           <div
             key={i}
             className={`max-w-[80%] p-3 rounded-xl ${
-              m.role === "user"
+              m.is_user
                 ? "bg-[#00ffcc] text-black ml-auto"
                 : "bg-zinc-900 text-white"
             }`}
@@ -123,6 +171,7 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         <div ref={endRef} />
       </div>
 
+      {/* INPUT */}
       <div className="p-4 border-t border-zinc-800 flex gap-2">
         <textarea
           value={input}
