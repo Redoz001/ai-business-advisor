@@ -14,17 +14,20 @@ Deno.serve(async (req) => {
       return new Response("ok", { headers: corsHeaders });
     }
 
-    // ---------------- SAFE PARSE ----------------
+    // ---------------- SAFE BODY PARSE ----------------
     const body = await req.json().catch(() => ({}));
 
     const message = body?.message?.trim();
     const userId = body?.userId;
-    const chatId = body?.chatId || crypto.randomUUID();
 
-    // ---------------- DEBUG LOG (IMPORTANT) ----------------
+    const chatId =
+      body?.chatId ??
+      globalThis.crypto?.randomUUID?.() ??
+      `${Date.now()}-${Math.random()}`;
+
     console.log("Incoming request:", { message, userId, chatId });
 
-    // ---------------- VALIDATION (SAFE) ----------------
+    // ---------------- VALIDATION ----------------
     if (!message) {
       return new Response(
         JSON.stringify({ error: "Missing message" }),
@@ -45,46 +48,71 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY");
 
     if (!apiKey || !supabaseUrl || !supabaseKey) {
+      console.error("Missing env vars");
       return new Response(
-        JSON.stringify({ error: "Missing env variables" }),
+        JSON.stringify({ error: "Missing environment variables" }),
         { status: 500, headers: corsHeaders }
       );
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ---------------- GROQ REQUEST ----------------
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "llama3-70b-8192",
-          messages: [
-            {
-              role: "system",
-              content: "You are Reuben AI, a helpful assistant.",
-            },
-            {
-              role: "user",
-              content: message,
-            },
-          ],
-          temperature: 0.7,
+    // ---------------- GROQ REQUEST (WITH TIMEOUT) ----------------
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
+    let response;
+
+    try {
+      response = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model:"llama-3.3-70b-versatile",
+            messages: [
+              {
+                role: "system",
+                content: "You are Reuben AI, a helpful assistant.",
+              },
+              {
+                role: "user",
+                content: message,
+              },
+            ],
+            temperature: 0.7,
+          }),
+        }
+      );
+    } catch (err) {
+      clearTimeout(timeout);
+      console.error("GROQ FETCH FAILED:", err);
+
+      return new Response(
+        JSON.stringify({
+          error: "AI request failed (timeout or network error)",
+          details: String(err),
         }),
-      }
-    );
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
       console.error("Groq error:", errText);
 
       return new Response(
-        JSON.stringify({ error: "AI failed", details: errText }),
+        JSON.stringify({
+          error: "AI failed",
+          details: errText,
+        }),
         { status: 500, headers: corsHeaders }
       );
     }
@@ -95,24 +123,27 @@ Deno.serve(async (req) => {
       data?.choices?.[0]?.message?.content?.trim() ||
       "No response generated.";
 
-    // ---------------- DATABASE SAVE (SAFE) ----------------
-    const { error: dbError } = await supabase.from("chat_messages").insert([
-      {
+    // ---------------- DATABASE INSERT (SAFE, SEPARATE ROWS) ----------------
+    try {
+      const { error: userErr } = await supabase.from("messages").insert({
         session_id: chatId,
         user_id: userId,
         role: "user",
         content: message,
-      },
-      {
+      });
+
+      if (userErr) console.error("User insert error:", userErr);
+
+      const { error: aiErr } = await supabase.from("messages").insert({
         session_id: chatId,
         user_id: userId,
         role: "assistant",
         content: reply,
-      },
-    ]);
+      });
 
-    if (dbError) {
-      console.error("DB insert error:", dbError);
+      if (aiErr) console.error("Assistant insert error:", aiErr);
+    } catch (dbCrash) {
+      console.error("DB CRASH:", dbCrash);
     }
 
     // ---------------- RESPONSE ----------------
@@ -128,13 +159,17 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     console.error("FATAL ERROR:", err);
+    console.error("STACK:", err?.stack);
 
     return new Response(
       JSON.stringify({
         error: "Server crashed",
-        details: err.message,
+        details: String(err),
       }),
-      { status: 500, headers: corsHeaders }
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
     );
   }
 });
