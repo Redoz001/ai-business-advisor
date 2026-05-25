@@ -1,17 +1,63 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import App from "./App.jsx";
-import "./index.css";
+import React, { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase.js";
+import Sidebar from "./Sidebar.jsx";
+import ReubenAI from "./ReubenAI.jsx";
 
-/**
- * Reuben AI - Entry Point
- * Safe upgrade: keeps StrictMode but prepares for future scaling
- */
+export default function App({ user }) {
+  const [sessions, setSessions] = useState([]);
+  const [activeChat, setActiveChat] = useState(null);
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
+  // LOAD SESSIONS
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from("chat_sessions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+      setSessions(data || []);
+    };
+
+    load();
+  }, [user]);
+
+  // CREATE CHAT
+  const createNewChat = async () => {
+    const { data } = await supabase
+      .from("chat_sessions")
+      .insert([
+        {
+          user_id: user.id,
+          title: "New Chat",
+        },
+      ])
+      .select()
+      .single();
+
+    setSessions((p) => [data, ...p]);
+    setActiveChat(data.id);
+  };
+
+  return (
+    <div className="flex h-screen bg-black">
+
+      <Sidebar
+        sessions={sessions}
+        activeChat={activeChat}
+        setActiveChat={setActiveChat}
+        createNewChat={createNewChat}
+      />
+
+      <div className="flex-1">
+        <ReubenAI
+          user={user}
+          activeChat={activeChat}
+          onNewSessionCreated={(id) => {
+            setActiveChat(id);
+          }}
+        />
+      </div>
+    </div>
+  );
+}

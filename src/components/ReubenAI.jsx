@@ -1,196 +1,115 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
-import { getAIResponse } from "../services/aiService.js";
+import { getAIStream } from "../services/aiService.js";
 
-export default function ReubenAI({
-  user,
-  activeChat,
-  onNewSessionCreated,
-}) {
+export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // =========================
-  // LOAD CHAT HISTORY
-  // =========================
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
   useEffect(() => {
     if (!activeChat) {
       setMessages([]);
       return;
     }
 
-    const fetchHistory = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("messages")
-          .select("*")
-          .eq("session_id", activeChat)
-          .order("created_at", { ascending: true });
+    (async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("session_id", activeChat)
+        .order("created_at", { ascending: true });
 
-        if (error) {
-          console.error("Fetch history error:", error);
-          return;
-        }
-
-        setMessages(data || []);
-      } catch (err) {
-        console.error("History crash:", err);
-      }
-    };
-
-    fetchHistory();
+      setMessages(data || []);
+    })();
   }, [activeChat]);
 
-  // =========================
-  // SEND MESSAGE
-  // =========================
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
-    const userMessage = input.trim();
-
+    const text = input;
     setInput("");
+
+    let sessionId = activeChat;
+
+    if (!sessionId) {
+      const { data } = await supabase
+        .from("chat_sessions")
+        .insert([
+          {
+            user_id: user.id,
+            title: text.slice(0, 30),
+          },
+        ])
+        .select()
+        .single();
+
+      sessionId = data.id;
+      onNewSessionCreated?.(sessionId);
+    }
+
+    setMessages((p) => [...p, { role: "user", content: text }]);
+
     setLoading(true);
 
     try {
-      let sessionId = activeChat;
+      const stream = await getAIStream({ message: text });
 
-      // =========================
-      // CREATE CHAT SESSION
-      // =========================
-      if (!sessionId) {
-        const { data, error } = await supabase
-          .from("chat_sessions")
-          .insert([
-            {
-              user_id: user.id,
-              title: userMessage.substring(0, 30),
-            },
-          ])
-          .select()
-          .single();
+      let finalText = "";
 
-        if (error) {
-          console.error("Session creation error:", error);
-          throw new Error(error.message);
-        }
+      // placeholder assistant message
+      setMessages((p) => [...p, { role: "assistant", content: "" }]);
 
-        sessionId = data.id;
+      for await (const chunk of stream) {
+        finalText = chunk;
 
-        if (typeof onNewSessionCreated === "function") {
-          onNewSessionCreated(sessionId);
-        }
-      }
-
-      // =========================
-      // SHOW USER MESSAGE IN UI
-      // =========================
-      const newUserMessage = {
-        role: "user",
-        content: userMessage,
-      };
-
-      setMessages((prev) => [...prev, newUserMessage]);
-
-      // =========================
-      // SAVE USER MESSAGE
-      // =========================
-      const { error: userInsertError } = await supabase
-        .from("messages")
-        .insert([
-          {
-            session_id: sessionId,
-            role: "user",
-            content: userMessage,
-          },
-        ]);
-
-      if (userInsertError) {
-        console.error("User message insert error:", userInsertError);
-      }
-
-      // =========================
-      // GET AI RESPONSE
-      // =========================
-      const aiData = await getAIResponse({
-        message: userMessage,
-        userId: user.id,
-        chatId: sessionId,
-      });
-
-      const aiReply =
-        aiData?.reply ||
-        aiData?.response ||
-        "Sorry, I could not generate a response.";
-
-      // =========================
-      // SHOW AI RESPONSE IN UI
-      // =========================
-      const newAIMessage = {
-        role: "assistant",
-        content: aiReply,
-      };
-
-      setMessages((prev) => [...prev, newAIMessage]);
-
-      // =========================
-      // SAVE AI RESPONSE
-      // =========================
-      const { error: aiInsertError } = await supabase
-        .from("messages")
-        .insert([
-          {
-            session_id: sessionId,
+        setMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = {
             role: "assistant",
-            content: aiReply,
-          },
-        ]);
-
-      if (aiInsertError) {
-        console.error("AI message insert error:", aiInsertError);
+            content: finalText,
+          };
+          return copy;
+        });
       }
-    } catch (err) {
-      console.error("AI ERROR:", err);
 
-      alert(
-        "AI failed to respond: " +
-          (err?.message || "Unknown error")
-      );
+      await supabase.from("messages").insert([
+        {
+          session_id: sessionId,
+          user_id: user.id,
+          role: "user",
+          content: text,
+        },
+        {
+          session_id: sessionId,
+          user_id: user.id,
+          role: "assistant",
+          content: finalText,
+        },
+      ]);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  // =========================
-  // ENTER KEY SEND
-  // =========================
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   return (
     <div className="flex flex-col h-full bg-black text-white">
-      {/* ========================= */}
-      {/* CHAT AREA */}
-      {/* ========================= */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-zinc-500 text-center mt-10">
-            Start chatting with Reuben AI
-          </div>
-        )}
-
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-[80%] p-4 rounded-2xl whitespace-pre-wrap ${
+            className={`max-w-[80%] p-3 rounded-xl ${
               m.role === "user"
                 ? "bg-[#00ffcc] text-black ml-auto"
-                : "bg-zinc-800 text-white"
+                : "bg-zinc-900 text-white"
             }`}
           >
             {m.content}
@@ -198,39 +117,32 @@ export default function ReubenAI({
         ))}
 
         {loading && (
-          <div className="bg-zinc-800 text-zinc-300 p-4 rounded-2xl max-w-[80%]">
-            Reuben is thinking...
-          </div>
+          <div className="text-zinc-400">ReubenAI is thinking...</div>
         )}
+
+        <div ref={endRef} />
       </div>
 
-      {/* ========================= */}
-      {/* INPUT AREA */}
-      {/* ========================= */}
-      <div className="border-t border-zinc-800 p-4">
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-            placeholder={
-              loading
-                ? "Reuben is thinking..."
-                : "Ask Reuben anything..."
+      <div className="p-4 border-t border-zinc-800 flex gap-2">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
             }
-            disabled={loading}
-            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl p-3 resize-none outline-none"
-          />
+          }}
+          className="flex-1 bg-zinc-900 p-3 rounded-xl"
+          placeholder="Message ReubenAI..."
+        />
 
-          <button
-            onClick={sendMessage}
-            disabled={loading}
-            className="bg-[#00ffcc] text-black font-bold px-6 rounded-xl disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
+        <button
+          onClick={sendMessage}
+          className="bg-[#00ffcc] text-black px-4 rounded-xl"
+        >
+          Send
+        </button>
       </div>
     </div>
   );
