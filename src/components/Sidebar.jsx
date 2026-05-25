@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase"; // Ensure this import path is correct
+import { supabase } from "../lib/supabase.js"; // Ensure this import path is correct
 
 export default function Sidebar({ onNewChat, onSelectSession, activeSession }) {
   const [sessions, setSessions] = useState([]);

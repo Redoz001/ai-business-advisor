@@ -41,9 +41,9 @@ Deno.serve(async (req) => {
     // =========================
     // ENV CHECK
     // =========================
-    const apiKey = Deno.env.get("VITE_GROQ_API_KEY");
-    const supabaseUrl = Deno.env.get("VITE_SUPABASE_URL");
-    const supabaseKey = Deno.env.get("VITE_SUPABASE_ANON_KEY");
+    const apiKey = Deno.env.get("GROQ_API_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY");
 
     if (!apiKey || !supabaseUrl || !supabaseKey) {
       return new Response(
