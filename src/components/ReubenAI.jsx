@@ -2,7 +2,11 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { getAIStream } from "../services/aiService.js";
 
-export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
+export default function ReubenAI({
+  user,
+  activeChat,
+  onNewSessionCreated,
+}) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -10,14 +14,16 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
   const endRef = useRef(null);
 
   // =========================
-  // SCROLL TO BOTTOM
+  // AUTO SCROLL
   // =========================
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    endRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [messages, loading]);
 
   // =========================
-  // LOAD MESSAGES (FIXED)
+  // LOAD CHAT HISTORY
   // =========================
   useEffect(() => {
     if (!activeChat) {
@@ -25,7 +31,7 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
       return;
     }
 
-    (async () => {
+    const fetchMessages = async () => {
       const { data, error } = await supabase
         .from("messages")
         .select("*")
@@ -33,91 +39,115 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         .order("created_at", { ascending: true });
 
       if (error) {
-        console.error(error);
+        console.error("Fetch messages error:", error);
         return;
       }
 
       setMessages(data || []);
-    })();
+    };
+
+    fetchMessages();
   }, [activeChat]);
 
   // =========================
   // SEND MESSAGE
   // =========================
   const sendMessage = async () => {
+    if (!user) {
+      alert("Please log in first.");
+      return;
+    }
+
     if (!input.trim() || loading) return;
 
-    const text = input;
+    const text = input.trim();
+
     setInput("");
+    setLoading(true);
 
     let sessionId = activeChat;
 
-    // =========================
-    // CREATE SESSION IF NONE
-    // =========================
-    if (!sessionId) {
-      const { data, error } = await supabase
-        .from("chat_sessions")
-        .insert([
-          {
-            user_id: user.id,
-            title: text.slice(0, 30),
-          },
-        ])
-        .select()
-        .single();
+    try {
+      // =========================
+      // CREATE SESSION
+      // =========================
+      if (!sessionId) {
+        const { data, error } = await supabase
+          .from("chat_sessions")
+          .insert([
+            {
+              user_id: user.id,
+              title: text.slice(0, 30),
+            },
+          ])
+          .select()
+          .single();
 
-      if (error) {
-        console.error(error);
-        return;
+        if (error) throw error;
+
+        sessionId = data.id;
+
+        if (typeof onNewSessionCreated === "function") {
+          onNewSessionCreated(sessionId);
+        }
       }
 
-      sessionId = data.id;
-      onNewSessionCreated?.(sessionId);
-    }
-
-    // =========================
-    // UI UPDATE (USER MESSAGE)
-    // =========================
-    setMessages((p) => [
-      ...p,
-      {
+      // =========================
+      // USER MESSAGE UI
+      // =========================
+      const userMessage = {
+        session_id: sessionId,
+        user_id: user.id,
         is_user: true,
         content: text,
-      },
-    ]);
+      };
 
-    setLoading(true);
+      setMessages((prev) => [...prev, userMessage]);
 
-    try {
-      const stream = await getAIStream({ message: text });
-
-      let finalText = "";
-
-      // placeholder assistant message
-      setMessages((p) => [
-        ...p,
+      // =========================
+      // ASSISTANT PLACEHOLDER
+      // =========================
+      setMessages((prev) => [
+        ...prev,
         {
           is_user: false,
           content: "",
         },
       ]);
 
+      // =========================
+      // AI STREAM
+      // =========================
+      const stream = await getAIStream({
+        message: text,
+        userId: user.id,
+        chatId: sessionId,
+      });
+
+      let finalText = "";
+
       for await (const chunk of stream) {
-        finalText = chunk;
+        finalText += chunk;
 
         setMessages((prev) => {
           const copy = [...prev];
+
           copy[copy.length - 1] = {
             is_user: false,
             content: finalText,
           };
+
           return copy;
         });
       }
 
+      // fallback protection
+      if (!finalText.trim()) {
+        finalText = "No response generated.";
+      }
+
       // =========================
-      // SAVE TO SUPABASE (FIXED SCHEMA)
+      // SAVE TO DATABASE
       // =========================
       const { error } = await supabase.from("messages").insert([
         {
@@ -135,10 +165,12 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
       ]);
 
       if (error) {
-        console.error(error);
+        console.error("Save messages error:", error);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Send message error:", err);
+
+      alert(err.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -165,7 +197,9 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         ))}
 
         {loading && (
-          <div className="text-zinc-400">ReubenAI is thinking...</div>
+          <div className="text-zinc-400">
+            ReubenAI is thinking...
+          </div>
         )}
 
         <div ref={endRef} />
@@ -182,13 +216,19 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
               sendMessage();
             }
           }}
-          className="flex-1 bg-zinc-900 p-3 rounded-xl"
-          placeholder="Message ReubenAI..."
+          disabled={loading}
+          className="flex-1 bg-zinc-900 p-3 rounded-xl resize-none"
+          placeholder={
+            loading
+              ? "ReubenAI is thinking..."
+              : "Message ReubenAI..."
+          }
         />
 
         <button
           onClick={sendMessage}
-          className="bg-[#00ffcc] text-black px-4 rounded-xl"
+          disabled={loading}
+          className="bg-[#00ffcc] text-black px-4 rounded-xl font-bold disabled:opacity-50"
         >
           Send
         </button>
