@@ -8,10 +8,20 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
-  // ✅ MUST handle preflight FIRST
+  // =========================
+  // MUST HANDLE PREFLIGHT FIRST
+  // =========================
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
+    return new Response(null, {
       status: 200,
+      headers: corsHeaders,
+    });
+  }
+
+  // Only allow POST after this
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", {
+      status: 405,
       headers: corsHeaders,
     });
   }
@@ -50,8 +60,6 @@ Deno.serve(async (req) => {
       },
     });
   } catch (err) {
-    console.error("EDGE ERROR:", err);
-
     return new Response(
       JSON.stringify({
         error: err?.message || "Internal error",
