@@ -11,3 +11,20 @@ export function extractFacts(message: string) {
 
   return facts;
 }
+
+export function retrieveRelevant(
+  memories: string[],
+  message: string
+) {
+  const lower = message.toLowerCase();
+
+  return memories.filter((m) =>
+    lower
+      .split(" ")
+      .some((word) => m.toLowerCase().includes(word))
+  );
+}
+
+export function compressMemory(memories: string[]) {
+  return memories.slice(-10).join("\n");
+}
