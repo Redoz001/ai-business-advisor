@@ -42,6 +42,7 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
     let sessionId = activeChat;
 
     try {
+      // 1. Session Creation
       if (!sessionId) {
         const { data, error } = await supabase
           .from("chat_sessions")
@@ -53,30 +54,37 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         if (typeof onNewSessionCreated === "function") onNewSessionCreated(sessionId);
       }
 
+      // 2. UI Update
       setMessages((prev) => [...prev, { is_user: true, content: text }, { is_user: false, content: "Thinking..." }]);
 
+      // 3. API Call
       const result = await sendMessageToAI({ message: text, userId: user.id, chatId: sessionId });
 
-      if (!result.success) throw new Error(result.error || "Unknown AI error");
+      // 4. Detailed Error Checking
+      if (!result) throw new Error("No response received from server.");
+      if (result.success === false) throw new Error(result.error || "Unknown backend error.");
 
-      // FIX: Ensure we use 'reply' to match backend output
-      const aiText = result.reply || result.message || "No response generated.";
+      const aiText = result.reply || result.message || "No content returned.";
 
+      // 5. Update Chat
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = { is_user: false, content: aiText };
         return copy;
       });
 
+      // 6. Save to DB
       await supabase.from("messages").insert([
         { session_id: sessionId, user_id: user.id, is_user: true, content: text },
         { session_id: sessionId, user_id: user.id, is_user: false, content: aiText },
       ]);
+
     } catch (err) {
-      console.error("Send message error:", err);
+      console.error("Full Error Details:", err);
+      // This forces the chat UI to show the real error
       setMessages((prev) => {
         const copy = [...prev];
-        copy[copy.length - 1] = { is_user: false, content: "Error: " + (err.message || "Something went wrong") };
+        copy[copy.length - 1] = { is_user: false, content: `Error: ${err.message}` };
         return copy;
       });
     } finally {
