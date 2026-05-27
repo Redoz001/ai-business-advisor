@@ -1,33 +1,156 @@
-// Define a list of stop words to filter out during retrieval
-// This prevents noisy matches on words that don't convey meaning
-const STOP_WORDS = new Set(["i", "am", "the", "a", "an", "and", "or", "to", "my", "in", "on", "it", "that", "is"]);
+// Lightweight memory engine for ReubenAI
 
-export function extractFacts(message: string) {
-  const m = message.toLowerCase();
+// Common low-value words ignored during retrieval
+const STOP_WORDS = new Set([
+  "i",
+  "am",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "to",
+  "my",
+  "in",
+  "on",
+  "it",
+  "that",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "of",
+  "for",
+  "with",
+  "this",
+  "you",
+  "me",
+]);
+
+// Extract useful long-term memory facts
+export function extractFacts(message: string): string[] {
+  const original = message.trim();
+  const m = original.toLowerCase();
+
   const facts: string[] = [];
 
-  // Using a more structured check
-  if (m.includes("i am")) facts.push(`[FACT] ${message}`);
-  if (m.includes("i want") || m.includes("my goal")) facts.push(`[GOAL] ${message}`);
-  if (m.includes("i prefer")) facts.push(`[PREFERENCE] ${message}`);
-  if (m.includes("i work on") || m.includes("building")) facts.push(`[PROJECT] ${message}`);
+  // Identity
+  if (
+    m.includes("i am") ||
+    m.includes("i'm")
+  ) {
+    facts.push(`[IDENTITY] ${original}`);
+  }
 
-  return [...new Set(facts)]; // Return unique facts only
+  // Goals
+  if (
+    m.includes("i want") ||
+    m.includes("my goal") ||
+    m.includes("i plan") ||
+    m.includes("i hope")
+  ) {
+    facts.push(`[GOAL] ${original}`);
+  }
+
+  // Preferences
+  if (
+    m.includes("i prefer") ||
+    m.includes("i like") ||
+    m.includes("i love")
+  ) {
+    facts.push(`[PREFERENCE] ${original}`);
+  }
+
+  // Projects
+  if (
+    m.includes("building") ||
+    m.includes("working on") ||
+    m.includes("creating") ||
+    m.includes("developing")
+  ) {
+    facts.push(`[PROJECT] ${original}`);
+  }
+
+  // Skills / work
+  if (
+    m.includes("i work") ||
+    m.includes("my job") ||
+    m.includes("i study")
+  ) {
+    facts.push(`[BACKGROUND] ${original}`);
+  }
+
+  // Remove duplicates
+  return [...new Set(facts)];
 }
 
-export function retrieveRelevant(memories: string[], message: string) {
-  const words = message.toLowerCase().split(/\s+/);
-  
-  // Only filter by words that carry meaning (not in STOP_WORDS)
-  const significantWords = words.filter(word => word.length > 2 && !STOP_WORDS.has(word));
+// Retrieve relevant memories using lightweight scoring
+export function retrieveRelevant(
+  memories: string[],
+  message: string,
+  limit = 5
+): string[] {
+  const words = message
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(
+      (word) =>
+        word.length > 2 &&
+        !STOP_WORDS.has(word)
+    );
 
-  return memories.filter((mem) => {
-    const memLower = mem.toLowerCase();
-    return significantWords.some((word) => memLower.includes(word));
+  const scored = memories.map((memory) => {
+    const memLower = memory.toLowerCase();
+
+    let score = 0;
+
+    for (const word of words) {
+      if (memLower.includes(word)) {
+        score += 1;
+      }
+    }
+
+    // Slight boost for project memories
+    if (memory.startsWith("[PROJECT]")) {
+      score += 1;
+    }
+
+    // Slight boost for goals
+    if (memory.startsWith("[GOAL]")) {
+      score += 1;
+    }
+
+    return {
+      memory,
+      score,
+    };
   });
+
+  return scored
+    .filter((m) => m.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((m) => m.memory);
 }
 
-export function compressMemory(memories: string[]) {
-  // Keep the most recent 10 items
-  return memories.slice(-10).join("\n");
+// Compress memory safely for prompt injection
+export function compressMemory(
+  memories: string[],
+  maxItems = 12
+): string {
+  // Remove duplicates while preserving order
+  const unique = [...new Set(memories)];
+
+  // Keep recent memories only
+  const trimmed = unique.slice(-maxItems);
+
+  return trimmed.join("\n");
 }

@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { supabase } from "./lib/supabase.js";
 
 export default function Auth({ setUser }) {
-
   // =========================
   // STATE
   // =========================
@@ -17,20 +16,48 @@ export default function Auth({ setUser }) {
   const [showPassword, setShowPassword] = useState(false);
 
   // =========================
+  // VALIDATION
+  // =========================
+  function validateForm() {
+    if (!email.trim()) {
+      setErrorMessage("Email is required.");
+      return false;
+    }
+
+    if (!password.trim()) {
+      setErrorMessage("Password is required.");
+      return false;
+    }
+
+    if (password.length < 6) {
+      setErrorMessage(
+        "Password must be at least 6 characters."
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  // =========================
   // SIGN UP
   // =========================
   async function signUp() {
+    if (loading) return;
 
-    setLoading(true);
     setErrorMessage("");
     setSuccessMessage("");
 
-    try {
+    if (!validateForm()) return;
 
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+    setLoading(true);
+
+    try {
+      const { data, error } =
+        await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
 
       if (error) {
         setErrorMessage(error.message);
@@ -38,7 +65,7 @@ export default function Auth({ setUser }) {
       }
 
       setSuccessMessage(
-        "Account created successfully. Check your email verification."
+        "Account created successfully. Check your email for verification."
       );
 
       if (data?.user) {
@@ -46,11 +73,10 @@ export default function Auth({ setUser }) {
       }
 
     } catch (err) {
-
-      console.error(err);
+      console.error("SIGNUP ERROR:", err);
 
       setErrorMessage(
-        "Unable to create account."
+        err?.message || "Unable to create account."
       );
 
     } finally {
@@ -62,16 +88,19 @@ export default function Auth({ setUser }) {
   // SIGN IN
   // =========================
   async function signIn() {
+    if (loading) return;
 
-    setLoading(true);
     setErrorMessage("");
     setSuccessMessage("");
 
-    try {
+    if (!validateForm()) return;
 
+    setLoading(true);
+
+    try {
       const { data, error } =
         await supabase.auth.signInWithPassword({
-          email,
+          email: email.trim(),
           password,
         });
 
@@ -89,11 +118,10 @@ export default function Auth({ setUser }) {
       }
 
     } catch (err) {
-
-      console.error(err);
+      console.error("LOGIN ERROR:", err);
 
       setErrorMessage(
-        "Login failed."
+        err?.message || "Login failed."
       );
 
     } finally {
@@ -102,10 +130,18 @@ export default function Auth({ setUser }) {
   }
 
   // =========================
+  // ENTER KEY SUPPORT
+  // =========================
+  function handleKeyDown(e) {
+    if (e.key === "Enter") {
+      signIn();
+    }
+  }
+
+  // =========================
   // UI
   // =========================
   return (
-
     <div
       className="
         min-h-screen
@@ -117,7 +153,6 @@ export default function Auth({ setUser }) {
         p-6
       "
     >
-
       {/* MAIN CARD */}
       <div
         className="
@@ -131,10 +166,8 @@ export default function Auth({ setUser }) {
           shadow-2xl
         "
       >
-
         {/* HEADER */}
         <div className="text-center mb-8">
-
           <h1
             className="
               text-4xl
@@ -143,18 +176,16 @@ export default function Auth({ setUser }) {
               mb-3
             "
           >
-            Reuben AI
+            ReubenAI
           </h1>
 
           <p className="text-zinc-400">
             Secure AI Authentication Portal
           </p>
-
         </div>
 
         {/* ERROR */}
         {errorMessage && (
-
           <div
             className="
               mb-4
@@ -169,12 +200,10 @@ export default function Auth({ setUser }) {
           >
             {errorMessage}
           </div>
-
         )}
 
         {/* SUCCESS */}
         {successMessage && (
-
           <div
             className="
               mb-4
@@ -189,12 +218,10 @@ export default function Auth({ setUser }) {
           >
             {successMessage}
           </div>
-
         )}
 
         {/* EMAIL */}
         <div className="mb-5">
-
           <label
             className="
               block
@@ -210,7 +237,11 @@ export default function Auth({ setUser }) {
             type="email"
             placeholder="Enter your email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
+            onKeyDown={handleKeyDown}
+            autoComplete="email"
             className="
               w-full
               bg-zinc-900
@@ -224,12 +255,10 @@ export default function Auth({ setUser }) {
               transition
             "
           />
-
         </div>
 
         {/* PASSWORD */}
         <div className="mb-6">
-
           <label
             className="
               block
@@ -242,12 +271,17 @@ export default function Auth({ setUser }) {
           </label>
 
           <div className="relative">
-
             <input
-              type={showPassword ? "text" : "password"}
+              type={
+                showPassword ? "text" : "password"
+              }
               placeholder="Enter your password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
+              onKeyDown={handleKeyDown}
+              autoComplete="current-password"
               className="
                 w-full
                 bg-zinc-900
@@ -265,7 +299,9 @@ export default function Auth({ setUser }) {
 
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={() =>
+                setShowPassword(!showPassword)
+              }
               className="
                 absolute
                 right-3
@@ -277,14 +313,11 @@ export default function Auth({ setUser }) {
             >
               {showPassword ? "🙈" : "👁️"}
             </button>
-
           </div>
-
         </div>
 
         {/* BUTTONS */}
         <div className="space-y-3">
-
           {/* LOGIN */}
           <button
             onClick={signIn}
@@ -301,7 +334,9 @@ export default function Auth({ setUser }) {
               disabled:opacity-50
             "
           >
-            {loading ? "PROCESSING..." : "LOGIN"}
+            {loading
+              ? "PROCESSING..."
+              : "LOGIN"}
           </button>
 
           {/* SIGN UP */}
@@ -322,7 +357,6 @@ export default function Auth({ setUser }) {
           >
             CREATE ACCOUNT
           </button>
-
         </div>
 
         {/* FOOTER */}
@@ -337,11 +371,9 @@ export default function Auth({ setUser }) {
             text-zinc-500
           "
         >
-          Reuben AI • Secure Authentication System
+          ReubenAI • Secure Authentication System
         </div>
-
       </div>
-
     </div>
   );
 }
