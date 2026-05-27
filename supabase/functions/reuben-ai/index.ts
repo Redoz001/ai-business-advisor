@@ -29,8 +29,7 @@ Deno.serve(async (req) => {
         status: 405,
         headers: {
           ...corsHeaders,
-          "Content-Type":
-            "application/json",
+          "Content-Type": "application/json",
         },
       }
     );
@@ -51,32 +50,44 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          error:
-            "Message is required",
+          error: "Message is required",
         }),
         {
           status: 400,
           headers: {
             ...corsHeaders,
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
         }
       );
     }
 
     // Run AI engine
-    const result =
-      await runReubenAI({
-        message,
-        userId,
-        chatId,
-      });
+    const result = await runReubenAI({
+      message,
+      userId,
+      chatId,
+    });
 
-    console.log(
-      "AI RESULT:",
-      result
-    );
+    console.log("AI RESULT:", JSON.stringify(result, null, 2));
+
+    // --- UPDATED ERROR HANDLING ---
+    // If the engine returns an error (e.g., Quota exceeded), surface it.
+    if (result?.error) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: typeof result.error === 'string' ? result.error : (result.error.message || "AI Service Error"),
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
 
     // Normalize reply
     const reply =
@@ -87,7 +98,7 @@ Deno.serve(async (req) => {
       result?.data?.content ||
       "No response generated.";
 
-    // Send clean response
+    // Send success response
     return new Response(
       JSON.stringify({
         success: true,
@@ -97,30 +108,24 @@ Deno.serve(async (req) => {
         status: 200,
         headers: {
           ...corsHeaders,
-          "Content-Type":
-            "application/json",
+          "Content-Type": "application/json",
         },
       }
     );
+
   } catch (err) {
-    console.error(
-      "FUNCTION ERROR:",
-      err
-    );
+    console.error("FUNCTION ERROR:", err);
 
     return new Response(
       JSON.stringify({
         success: false,
-        error:
-          err?.message ||
-          "Internal server error",
+        error: err?.message || "Internal server error",
       }),
       {
         status: 500,
         headers: {
           ...corsHeaders,
-          "Content-Type":
-            "application/json",
+          "Content-Type": "application/json",
         },
       }
     );
