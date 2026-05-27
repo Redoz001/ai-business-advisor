@@ -12,6 +12,26 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  useEffect(() => {
+    if (!activeChat) {
+      setMessages([]);
+      return;
+    }
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("session_id", activeChat)
+        .order("created_at", { ascending: true });
+      if (error) {
+        console.error("Fetch messages error:", error);
+        return;
+      }
+      setMessages(data || []);
+    };
+    fetchMessages();
+  }, [activeChat]);
+
   const sendMessage = async () => {
     if (!user || !input.trim() || loading) return;
 
@@ -22,7 +42,6 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
     let sessionId = activeChat;
 
     try {
-      // 1. Session check
       if (!sessionId) {
         const { data, error } = await supabase
           .from("chat_sessions")
@@ -34,45 +53,37 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         if (typeof onNewSessionCreated === "function") onNewSessionCreated(sessionId);
       }
 
-      // 2. Add placeholders
       setMessages((prev) => [...prev, { is_user: true, content: text }, { is_user: false, content: "Thinking..." }]);
 
-      // 3. Call AI Service
       const result = await sendMessageToAI({ message: text, userId: user.id, chatId: sessionId });
 
-      // 4. FIX: Stop the generic "No response generated"
-      // If the backend didn't return an error property, check if it returned the content
-      if (!result) throw new Error("Server returned an empty response.");
-      
-      const aiText = result.reply || result.message || result.response;
-      
-      if (!aiText) {
-        // If we are here, the server didn't send an error, but it also didn't send a message
-        throw new Error("Server responded but contained no message (Check your Backend logic).");
+      // Check if the backend returned a structural error
+      if (result?.success === false) {
+        throw new Error(result.error || "Backend request failed.");
       }
 
-      // 5. Update UI
+      const aiText = result?.reply || result?.message;
+
+      if (!aiText) {
+        throw new Error("Received an empty response from the AI.");
+      }
+
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = { is_user: false, content: aiText };
         return copy;
       });
 
-      // 6. Save to Database
       await supabase.from("messages").insert([
         { session_id: sessionId, user_id: user.id, is_user: true, content: text },
         { session_id: sessionId, user_id: user.id, is_user: false, content: aiText },
       ]);
-
     } catch (err) {
-      console.error("DEBUG ERROR:", err);
-      // THIS WILL NOW SHOW THE REAL ERROR ON YOUR SCREEN
+      console.error("Critical Send Error:", err);
+      // This forces the actual error to appear in the chat so you can diagnose the issue immediately
       setMessages((prev) => {
         const copy = [...prev];
-        copy[copy.length - 1] = { 
-          is_user: false, 
-          content: `Error: ${err.message}` 
-        };
+        copy[copy.length - 1] = { is_user: false, content: `SYSTEM ERROR: ${err.message || "Unknown issue"}` };
         return copy;
       });
     } finally {
