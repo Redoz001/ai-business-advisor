@@ -8,7 +8,7 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
 
-  // Auto-scroll to bottom of chat
+  // Auto-scroll to bottom
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -22,8 +22,11 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
 
     let sessionId = activeChat;
 
+    // 1. Add user message + "Thinking"
+    setMessages((prev) => [...prev, { is_user: true, content: text }, { is_user: false, content: "Thinking..." }]);
+
     try {
-      // 1. Session check
+      // 2. Session Logic
       if (!sessionId) {
         const { data, error } = await supabase
           .from("chat_sessions")
@@ -35,34 +38,24 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
         if (typeof onNewSessionCreated === "function") onNewSessionCreated(sessionId);
       }
 
-      // 2. Add user message and 'Thinking' placeholder
-      setMessages((prev) => [
-        ...prev, 
-        { is_user: true, content: text }, 
-        { is_user: false, content: "Thinking..." }
-      ]);
-
-      // 3. Call AI Service
-      const result = await sendMessageToAI({ 
-        message: text, 
-        userId: user.id, 
-        chatId: sessionId 
-      });
-
-      // 4. Validate Result
+      // 3. API Call
+      const result = await sendMessageToAI({ message: text, userId: user.id, chatId: sessionId });
+      
+      // 4. Critical Error Catching
       if (!result) throw new Error("Server returned no data.");
-      if (result.error) throw new Error(result.error); 
+      
+      // Look for the reply in common response structures
+      const aiText = result.reply || result.message || result.text || result.content;
+      if (!aiText) throw new Error("AI responded with an empty message.");
 
-      const aiText = result.reply || result.message || "No content received.";
-
-      // 5. Update UI
+      // 5. Update UI with AI response
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = { is_user: false, content: aiText };
         return copy;
       });
 
-      // 6. Save to DB
+      // 6. Save to Database
       await supabase.from("messages").insert([
         { session_id: sessionId, user_id: user.id, is_user: true, content: text },
         { session_id: sessionId, user_id: user.id, is_user: false, content: aiText },
@@ -70,12 +63,12 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
 
     } catch (err) {
       console.error("DEBUG ERROR:", err);
-      // FIX: This forces the actual error onto your screen instead of hiding it
+      // THIS WILL REVEAL THE ACTUAL ERROR
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = { 
           is_user: false, 
-          content: `Error: ${err.message || "Check browser console for details."}` 
+          content: `CRITICAL ERROR: ${err.message}` 
         };
         return copy;
       });
@@ -88,10 +81,7 @@ export default function ReubenAI({ user, activeChat, onNewSessionCreated }) {
     <div className="flex flex-col h-full bg-black text-white">
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((m, i) => (
-          <div 
-            key={i} 
-            className={`max-w-[80%] p-3 rounded-xl ${m.is_user ? "bg-[#00ffcc] text-black ml-auto" : "bg-zinc-900 text-white"}`}
-          >
+          <div key={i} className={`max-w-[80%] p-3 rounded-xl ${m.is_user ? "bg-[#00ffcc] text-black ml-auto" : "bg-zinc-900 text-white"}`}>
             {m.content}
           </div>
         ))}
