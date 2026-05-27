@@ -1,35 +1,44 @@
 import { supabase } from "../lib/supabase";
 
-const FUNCTION_URL =
-  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export async function sendMessageToAI({
-  message,
-  userId,
-  chatId,
-}) {
+const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/reuben-ai`;
+
+export async function sendMessageToAI({ message, userId, chatId }) {
   try {
-    // Get current auth session
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    // =========================
+    // VALIDATE ENV VARS
+    // =========================
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      throw new Error("Missing Supabase environment variables");
+    }
+
+    // =========================
+    // GET SESSION
+    // =========================
+    const { data, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      throw new Error(sessionError.message);
+    }
+
+    const session = data.session;
 
     if (!session) {
       throw new Error("User not authenticated");
     }
 
-    // Send request to Supabase Edge Function
+    // =========================
+    // CALL EDGE FUNCTION
+    // =========================
     const response = await fetch(FUNCTION_URL, {
       method: "POST",
-
       headers: {
         "Content-Type": "application/json",
-
         Authorization: `Bearer ${session.access_token}`,
-
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        apikey: SUPABASE_ANON_KEY,
       },
-
       body: JSON.stringify({
         message,
         userId,
@@ -37,38 +46,42 @@ export async function sendMessageToAI({
       }),
     });
 
-    // Handle failed responses
+    // =========================
+    // HANDLE HTTP ERRORS
+    // =========================
     if (!response.ok) {
       let errorMessage = "AI request failed";
 
       try {
         const errorData = await response.json();
-
         errorMessage =
           errorData?.error ||
           errorData?.message ||
           errorMessage;
-
       } catch {
-        // Ignore JSON parse errors
+        // ignore JSON parse failure
       }
 
       throw new Error(errorMessage);
     }
 
-    // Parse successful response
-    const data = await response.json();
+    // =========================
+    // PARSE RESPONSE
+    // =========================
+    const dataResponse = await response.json();
 
-    return data;
+    return {
+      success: true,
+      ...dataResponse,
+    };
 
   } catch (err) {
     console.error("AI SERVICE ERROR:", err);
 
+    // IMPORTANT: ensures UI always handles failure cleanly
     return {
       success: false,
-      error:
-        err?.message ||
-        "Unable to contact ReubenAI",
+      error: err?.message || "Unable to contact ReubenAI",
     };
   }
 }

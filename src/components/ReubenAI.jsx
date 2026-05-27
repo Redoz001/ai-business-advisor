@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
-import { getAIStream } from "../services/aiService.js";
+import { sendMessageToAI } from "../services/aiService.js";
 
 export default function ReubenAI({
   user,
@@ -61,7 +61,6 @@ export default function ReubenAI({
     if (!input.trim() || loading) return;
 
     const text = input.trim();
-
     setInput("");
     setLoading(true);
 
@@ -69,7 +68,7 @@ export default function ReubenAI({
 
     try {
       // =========================
-      // CREATE SESSION
+      // CREATE SESSION IF NEEDED
       // =========================
       if (!sessionId) {
         const { data, error } = await supabase
@@ -93,7 +92,7 @@ export default function ReubenAI({
       }
 
       // =========================
-      // USER MESSAGE UI
+      // ADD USER MESSAGE (UI)
       // =========================
       const userMessage = {
         session_id: sessionId,
@@ -105,72 +104,80 @@ export default function ReubenAI({
       setMessages((prev) => [...prev, userMessage]);
 
       // =========================
-      // ASSISTANT PLACEHOLDER
+      // ADD AI PLACEHOLDER
       // =========================
       setMessages((prev) => [
         ...prev,
         {
           is_user: false,
-          content: "",
+          content: "Thinking...",
         },
       ]);
 
       // =========================
-      // AI STREAM
+      // CALL AI (NO STREAMING)
       // =========================
-      const stream = await getAIStream({
+      const result = await sendMessageToAI({
         message: text,
         userId: user.id,
         chatId: sessionId,
       });
 
-      let finalText = "";
-
-      for await (const chunk of stream) {
-        finalText += chunk;
-
-        setMessages((prev) => {
-          const copy = [...prev];
-
-          copy[copy.length - 1] = {
-            is_user: false,
-            content: finalText,
-          };
-
-          return copy;
-        });
+      if (!result.success) {
+        throw new Error(result.error);
       }
 
-      // fallback protection
-      if (!finalText.trim()) {
-        finalText = "No response generated.";
-      }
+      const aiText =
+        result.response || result.message || "No response generated.";
+
+      // =========================
+      // UPDATE LAST MESSAGE (AI)
+      // =========================
+      setMessages((prev) => {
+        const copy = [...prev];
+
+        copy[copy.length - 1] = {
+          is_user: false,
+          content: aiText,
+        };
+
+        return copy;
+      });
 
       // =========================
       // SAVE TO DATABASE
       // =========================
-      const { error } = await supabase.from("messages").insert([
-        {
-          session_id: sessionId,
-          user_id: user.id,
-          is_user: true,
-          content: text,
-        },
-        {
-          session_id: sessionId,
-          user_id: user.id,
-          is_user: false,
-          content: finalText,
-        },
-      ]);
+      const { error: saveError } = await supabase
+        .from("messages")
+        .insert([
+          {
+            session_id: sessionId,
+            user_id: user.id,
+            is_user: true,
+            content: text,
+          },
+          {
+            session_id: sessionId,
+            user_id: user.id,
+            is_user: false,
+            content: aiText,
+          },
+        ]);
 
-      if (error) {
-        console.error("Save messages error:", error);
+      if (saveError) {
+        console.error("Save messages error:", saveError);
       }
     } catch (err) {
       console.error("Send message error:", err);
 
-      alert(err.message || "Something went wrong.");
+      setMessages((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = {
+          is_user: false,
+          content: "Error: " + (err.message || "Something went wrong"),
+        };
+        return copy;
+      });
     } finally {
       setLoading(false);
     }
