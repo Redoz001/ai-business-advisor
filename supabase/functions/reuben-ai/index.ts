@@ -1,6 +1,6 @@
 ﻿import { runReubenAI } from "./reuben_engine.ts";
 
-const cors = {
+const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
@@ -8,7 +8,9 @@ const cors = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: cors });
+    return new Response("ok", {
+      headers: corsHeaders,
+    });
   }
 
   try {
@@ -29,7 +31,7 @@ Deno.serve(async (req) => {
       {
         status: 200,
         headers: {
-          ...cors,
+          ...corsHeaders,
           "Content-Type":
             "application/json",
         },
@@ -43,7 +45,7 @@ Deno.serve(async (req) => {
       }),
       {
         status: 500,
-        headers: cors,
+        headers: corsHeaders,
       }
     );
   }

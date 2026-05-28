@@ -1,244 +1,653 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reuben AI - Central Command</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
+  <title>ReubenAI - Autonomous Core</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <!-- Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <style>
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 4px; }
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 999px;
+    }
+
+    body {
+      background: #020617;
+    }
+
+    .typing-dot {
+      animation: blink 1.3s infinite both;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: .2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: .4s;
+    }
+
+    @keyframes blink {
+      0% {
+        opacity: .2;
+      }
+
+      20% {
+        opacity: 1;
+      }
+
+      100% {
+        opacity: .2;
+      }
+    }
+
+    pre {
+      overflow-x: auto;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      padding: 16px;
+      border-radius: 14px;
+      margin-top: 12px;
+    }
+
+    code {
+      color: #cbd5e1;
+      font-size: 13px;
+    }
+
+    .message-enter {
+      animation: fadeIn .25s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
   </style>
 </head>
 
-<body class="bg-gray-950 text-gray-100 font-sans h-screen flex overflow-hidden">
+<body class="text-gray-100 font-sans h-screen flex overflow-hidden">
 
-<!-- ================= SIDEBAR ================= -->
-<aside class="w-80 bg-gray-900 border-r border-gray-800 flex flex-col justify-between">
-  <div class="p-4 flex flex-col h-full overflow-hidden">
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="w-80 bg-black/40 border-r border-gray-800 flex flex-col backdrop-blur-xl">
 
-    <button onclick="createNewSession()"
-      class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 transition rounded-lg font-medium text-sm flex items-center justify-center gap-2 mb-4 shadow-lg shadow-emerald-900/20">
-      <span>+</span> New Chat
-    </button>
+    <!-- TOP -->
+    <div class="p-4 border-b border-gray-800">
 
-    <div class="flex-1 overflow-y-auto space-y-1 pr-1" id="sessionList">
-      <p class="text-xs text-gray-500 p-2">Loading history matrix...</p>
-    </div>
-
-  </div>
-
-  <div class="p-4 border-t border-gray-800 text-xs text-gray-500 font-mono">
-    CORE V1.2 // REUBEN MURIMI
-  </div>
-</aside>
-
-<!-- ================= MAIN ================= -->
-<main class="flex-1 flex flex-col bg-gray-950">
-
-  <header class="h-16 border-b border-gray-900 flex items-center px-8 justify-between bg-gray-950/50 backdrop-blur">
-    <h2 class="font-mono text-sm tracking-widest text-emerald-400 font-bold" id="currentChatTitle">
-      REUBEN AI // AUTONOMOUS CORE
-    </h2>
-  </header>
-
-  <div class="flex-1 overflow-y-auto p-8 space-y-6" id="chatStream">
-    <div class="max-w-3xl mx-auto text-center py-20 text-gray-500">
-      <h1 class="text-3xl font-bold text-gray-300 mb-2 font-mono">
-        System Initialization Complete.
-      </h1>
-      <p class="text-sm">Select a previous conversation or start a new one.</p>
-    </div>
-  </div>
-
-  <footer class="p-6 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent">
-
-    <div class="max-w-3xl mx-auto">
-
-      <form id="queryForm"
-        onsubmit="handleQuery(event)"
-        class="relative flex items-center bg-gray-900 border border-gray-800 focus-within:border-emerald-500 transition rounded-xl p-2">
-
-        <input type="text"
-          id="userInput"
-          autocomplete="off"
-          placeholder="Message Reuben AI..."
-          class="w-full bg-transparent py-3 px-4 text-sm text-gray-100 focus:outline-none placeholder-gray-500">
-
-        <button type="submit"
-          class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition">
-          Execute
-        </button>
-
-      </form>
+      <button
+        onclick="createNewSession()"
+        class="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 transition font-semibold text-sm shadow-lg shadow-emerald-900/20"
+      >
+        + New Chat
+      </button>
 
     </div>
-  </footer>
 
-</main>
+    <!-- SESSIONS -->
+    <div
+      id="sessionList"
+      class="flex-1 overflow-y-auto p-3 space-y-2"
+    >
 
-<script>
-  // ================= FIXED SUPABASE INIT =================
-  const SUPABASE_URL = "https://whvzdutfyydshamwfhvu.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndodnpkdXRmeXlkc2hhbXdmaHZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NjQ5MDAsImV4cCI6MjA5NDE0MDkwMH0.KEVgU3l-d9glmFf0n4oO3nOnLnvbxTu98gdwh3hyWmo";
-
-  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/reuben-ai`;
-
-  let activeSessionId = null;
-
-  // ================= LOAD SESSIONS =================
-  window.onload = async () => {
-    await loadSessions();
-  };
-
-  async function loadSessions() {
-    const { data, error } = await client
-      .from('chat_sessions')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) return console.error(error);
-
-    const container = document.getElementById('sessionList');
-    container.innerHTML = '';
-
-    data.forEach(session => {
-      const btn = document.createElement('button');
-
-      btn.className =
-        `w-full text-left px-3 py-2.5 rounded-md text-sm truncate font-mono transition
-        ${session.id === activeSessionId
-          ? 'bg-gray-800 text-emerald-400 border-l-2 border-emerald-500'
-          : 'text-gray-400 hover:bg-gray-850 hover:text-gray-200'}`;
-
-      btn.innerHTML = `💬 ${session.title}`;
-      btn.onclick = () => switchSession(session.id, session.title);
-
-      container.appendChild(btn);
-    });
-  }
-
-  // ================= NEW SESSION =================
-  async function createNewSession() {
-    const { data, error } = await client
-      .from('chat_sessions')
-      .insert([{
-        title: `Chat ${new Date().toLocaleTimeString()}`
-      }])
-      .select()
-      .single();
-
-    if (error) return alert("Failed to create session");
-
-    activeSessionId = data.id;
-    await loadSessions();
-    await switchSession(data.id, data.title);
-  }
-
-  // ================= SWITCH SESSION (FIXED QUERY) =================
-  async function switchSession(id, title) {
-    activeSessionId = id;
-
-    document.getElementById('currentChatTitle').innerText =
-      `ACTIVE CORE // ${title.toUpperCase()}`;
-
-    await loadSessions();
-
-    const { data, error } = await client
-      .from('chat_messages')
-      .select('*')
-      .eq('session_id', id)   // ✅ FIXED
-      .order('created_at', { ascending: true });
-
-    const stream = document.getElementById('chatStream');
-    stream.innerHTML = '';
-
-    if (!data || data.length === 0) {
-      stream.innerHTML =
-        `<div class="text-center py-20 text-gray-600 text-sm font-mono">
-          [ No conversation found ]
-        </div>`;
-      return;
-    }
-
-    data.forEach(m => appendMessageUI(m.role, m.content));
-  }
-
-  // ================= UI MESSAGE =================
-  function appendMessageUI(role, content) {
-    const stream = document.getElementById('chatStream');
-
-    const div = document.createElement('div');
-    div.className = `max-w-3xl mx-auto p-4 rounded-xl ${
-      role === 'user'
-        ? 'bg-gray-900/40'
-        : 'bg-emerald-950/10 border border-emerald-900/20'
-    }`;
-
-    div.innerHTML = `
-      <div class="text-xs font-mono mb-1 text-gray-400">
-        ${role === 'user' ? 'YOU' : 'REUBEN AI'}
+      <div class="text-xs text-gray-500 font-mono p-2">
+        Loading sessions...
       </div>
-      <div class="text-sm text-gray-200 whitespace-pre-wrap">${content}</div>
-    `;
 
-    stream.appendChild(div);
-    stream.scrollTop = stream.scrollHeight;
-  }
+    </div>
 
-  // ================= SEND MESSAGE =================
-  async function handleQuery(e) {
-    e.preventDefault();
+    <!-- FOOTER -->
+    <div class="border-t border-gray-800 p-4">
 
-    const input = document.getElementById('userInput');
-    const message = input.value.trim();
+      <div class="text-xs font-mono text-gray-500">
+        REUBEN AI CORE V3
+      </div>
 
-    if (!message) return;
+      <div class="text-[10px] text-gray-600 mt-1">
+        Autonomous Intelligence System
+      </div>
 
-    input.value = '';
+    </div>
 
-    if (!activeSessionId) {
-      await createNewSession();
-    }
+  </aside>
 
-    // save user
-    await client.from('chat_messages').insert([{
-      session_id: activeSessionId,
-      role: 'user',
-      content: message
-    }]);
+  <!-- ================= MAIN ================= -->
+  <main class="flex-1 flex flex-col bg-[#020617]">
 
-    appendMessageUI('user', message);
+    <!-- HEADER -->
+    <header class="h-16 border-b border-gray-900 flex items-center justify-between px-8 bg-black/20 backdrop-blur-xl">
 
-    try {
-      const res = await fetch(EDGE_FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ message })
+      <div>
+
+        <h1
+          id="currentChatTitle"
+          class="text-sm tracking-widest font-mono text-emerald-400 font-bold"
+        >
+          REUBEN AI // AUTONOMOUS CORE
+        </h1>
+
+      </div>
+
+    </header>
+
+    <!-- CHAT -->
+    <div
+      id="chatStream"
+      class="flex-1 overflow-y-auto px-6 py-8 space-y-6"
+    >
+
+      <div class="max-w-4xl mx-auto text-center py-28">
+
+        <h1 class="text-5xl font-bold text-white mb-5">
+          ReubenAI Online
+        </h1>
+
+        <p class="text-gray-500">
+          Your autonomous intelligence system is ready.
+        </p>
+
+      </div>
+
+    </div>
+
+    <!-- INPUT -->
+    <footer class="p-6 border-t border-gray-900 bg-black/10 backdrop-blur-xl">
+
+      <div class="max-w-4xl mx-auto">
+
+        <form
+          id="queryForm"
+          onsubmit="handleQuery(event)"
+          class="bg-gray-900 border border-gray-800 rounded-2xl p-2 flex items-center shadow-2xl"
+        >
+
+          <input
+            id="userInput"
+            type="text"
+            autocomplete="off"
+            placeholder="Message ReubenAI..."
+            class="flex-1 bg-transparent px-4 py-3 text-sm text-white placeholder-gray-500 outline-none"
+          />
+
+          <button
+            type="submit"
+            class="bg-emerald-600 hover:bg-emerald-500 transition px-5 py-3 rounded-xl text-sm font-semibold"
+          >
+            Send
+          </button>
+
+        </form>
+
+      </div>
+
+    </footer>
+
+  </main>
+
+  <script>
+    // ================= CONFIG =================
+    const SUPABASE_URL =
+      "https://whvzdutfyydshamwfhvu.supabase.co";
+
+    const SUPABASE_ANON_KEY =
+      "YOUR_SUPABASE_ANON_KEY";
+
+    const EDGE_FUNCTION_URL =
+      `${SUPABASE_URL}/functions/v1/reuben-ai`;
+
+    // ================= SUPABASE =================
+    const client =
+      supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY
+      );
+
+    // ================= STATE =================
+    let activeSessionId = null;
+
+    // ================= LOAD =================
+    window.onload = async () => {
+
+      await loadSessions();
+
+    };
+
+    // ================= ENTER TO SEND =================
+    const inputField =
+      document.getElementById(
+        "userInput"
+      );
+
+    inputField.addEventListener(
+      "keypress",
+      function (e) {
+
+        if (e.key === "Enter") {
+
+          e.preventDefault();
+
+          handleQuery(e);
+
+        }
+      }
+    );
+
+    // ================= LOAD SESSIONS =================
+    async function loadSessions() {
+
+      const container =
+        document.getElementById(
+          "sessionList"
+        );
+
+      const { data, error } =
+        await client
+          .from("chat_sessions")
+          .select("*")
+          .order("created_at", {
+            ascending: false
+          });
+
+      if (error) {
+
+        console.error(error);
+
+        container.innerHTML = `
+          <div class="text-red-400 text-xs p-2">
+            Failed to load sessions
+          </div>
+        `;
+
+        return;
+      }
+
+      container.innerHTML = "";
+
+      if (!data || data.length === 0) {
+
+        container.innerHTML = `
+          <div class="text-gray-500 text-xs p-2">
+            No chat sessions
+          </div>
+        `;
+
+        return;
+      }
+
+      data.forEach((session) => {
+
+        const button =
+          document.createElement(
+            "button"
+          );
+
+        button.className =
+          `w-full text-left p-3 rounded-xl transition text-sm ${
+            session.id === activeSessionId
+              ? "bg-emerald-900/20 border border-emerald-500/20 text-emerald-300"
+              : "hover:bg-gray-900 text-gray-400 hover:text-white"
+          }`;
+
+        button.innerHTML = `
+          <div class="truncate font-medium">
+            💬 ${session.title}
+          </div>
+        `;
+
+        button.onclick = () =>
+          switchSession(
+            session.id,
+            session.title
+          );
+
+        container.appendChild(button);
+
       });
-
-      const data = await res.json();
-      const reply = data.reply || "No response";
-
-      await client.from('chat_messages').insert([{
-        session_id: activeSessionId,
-        role: 'assistant',
-        content: reply
-      }]);
-
-      appendMessageUI('assistant', reply);
-
-    } catch (err) {
-      appendMessageUI('assistant', "System error: AI offline");
     }
-  }
-</script>
+
+    // ================= CREATE SESSION =================
+    async function createNewSession() {
+
+      const title =
+        `Chat ${new Date().toLocaleTimeString()}`;
+
+      const { data, error } =
+        await client
+          .from("chat_sessions")
+          .insert([
+            {
+              title
+            }
+          ])
+          .select()
+          .single();
+
+      if (error) {
+
+        console.error(error);
+
+        return alert(
+          "Failed to create session"
+        );
+      }
+
+      activeSessionId = data.id;
+
+      await loadSessions();
+
+      await switchSession(
+        data.id,
+        data.title
+      );
+    }
+
+    // ================= SWITCH SESSION =================
+    async function switchSession(
+      id,
+      title
+    ) {
+
+      activeSessionId = id;
+
+      document.getElementById(
+        "currentChatTitle"
+      ).innerText =
+        `ACTIVE CORE // ${title.toUpperCase()}`;
+
+      await loadSessions();
+
+      const stream =
+        document.getElementById(
+          "chatStream"
+        );
+
+      stream.innerHTML = "";
+
+      const { data, error } =
+        await client
+          .from("chat_messages")
+          .select("*")
+          .eq("session_id", id)
+          .order("created_at", {
+            ascending: true
+          });
+
+      if (error) {
+
+        console.error(error);
+
+        stream.innerHTML = `
+          <div class="text-center py-10 text-red-400">
+            Failed to load messages
+          </div>
+        `;
+
+        return;
+      }
+
+      if (!data || data.length === 0) {
+
+        stream.innerHTML = `
+          <div class="text-center py-24 text-gray-600 font-mono text-sm">
+            [ No conversation found ]
+          </div>
+        `;
+
+        return;
+      }
+
+      data.forEach((message) => {
+
+        appendMessageUI(
+          message.role,
+          message.content
+        );
+
+      });
+    }
+
+    // ================= MESSAGE UI =================
+    function appendMessageUI(
+      role,
+      content
+    ) {
+
+      const stream =
+        document.getElementById(
+          "chatStream"
+        );
+
+      const wrapper =
+        document.createElement(
+          "div"
+        );
+
+      wrapper.className =
+        "max-w-4xl mx-auto message-enter";
+
+      const bubble =
+        document.createElement(
+          "div"
+        );
+
+      bubble.className =
+        role === "user"
+          ? "bg-gray-900 border border-gray-800 rounded-2xl p-5"
+          : "bg-emerald-950/20 border border-emerald-900/20 rounded-2xl p-5";
+
+      bubble.innerHTML = `
+        <div class="text-xs font-mono mb-2 ${
+          role === "user"
+            ? "text-blue-400"
+            : "text-emerald-400"
+        }">
+          ${role === "user"
+            ? "YOU"
+            : "REUBEN AI"}
+        </div>
+
+        <div class="prose prose-invert max-w-none text-sm leading-7 text-gray-200">
+          ${marked.parse(content)}
+        </div>
+      `;
+
+      wrapper.appendChild(bubble);
+
+      stream.appendChild(wrapper);
+
+      stream.scrollTop =
+        stream.scrollHeight;
+    }
+
+    // ================= THINKING =================
+    function showThinking() {
+
+      const stream =
+        document.getElementById(
+          "chatStream"
+        );
+
+      const wrapper =
+        document.createElement(
+          "div"
+        );
+
+      wrapper.id =
+        "thinkingIndicator";
+
+      wrapper.className =
+        "max-w-4xl mx-auto";
+
+      wrapper.innerHTML = `
+        <div class="bg-emerald-950/20 border border-emerald-900/20 rounded-2xl p-5">
+
+          <div class="text-xs font-mono text-emerald-400 mb-2">
+            REUBEN AI
+          </div>
+
+          <div class="flex items-center gap-1 text-emerald-300">
+
+            <span>Thinking</span>
+
+            <span class="typing-dot">.</span>
+            <span class="typing-dot">.</span>
+            <span class="typing-dot">.</span>
+
+          </div>
+
+        </div>
+      `;
+
+      stream.appendChild(wrapper);
+
+      stream.scrollTop =
+        stream.scrollHeight;
+    }
+
+    // ================= REMOVE THINKING =================
+    function removeThinking() {
+
+      const thinking =
+        document.getElementById(
+          "thinkingIndicator"
+        );
+
+      if (thinking) {
+        thinking.remove();
+      }
+    }
+
+    // ================= HANDLE QUERY =================
+    async function handleQuery(e) {
+
+      if (e) {
+        e.preventDefault();
+      }
+
+      const input =
+        document.getElementById(
+          "userInput"
+        );
+
+      const message =
+        input.value.trim();
+
+      if (!message) return;
+
+      input.value = "";
+
+      // auto create session
+      if (!activeSessionId) {
+
+        await createNewSession();
+
+      }
+
+      // append user instantly
+      appendMessageUI(
+        "user",
+        message
+      );
+
+      // save user message
+      await client
+        .from("chat_messages")
+        .insert([
+          {
+            session_id:
+              activeSessionId,
+            role: "user",
+            content: message
+          }
+        ]);
+
+      // thinking UI
+      showThinking();
+
+      try {
+
+        const res =
+          await fetch(
+            EDGE_FUNCTION_URL,
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body: JSON.stringify({
+                message,
+                userId:
+                  "demo-user",
+                chatId:
+                  activeSessionId
+              })
+            }
+          );
+
+        const data =
+          await res.json();
+
+        removeThinking();
+
+        const reply =
+          data.reply ||
+          "No AI response.";
+
+        // save assistant
+        await client
+          .from("chat_messages")
+          .insert([
+            {
+              session_id:
+                activeSessionId,
+              role:
+                "assistant",
+              content:
+                reply
+            }
+          ]);
+
+        appendMessageUI(
+          "assistant",
+          reply
+        );
+
+      } catch (err) {
+
+        console.error(err);
+
+        removeThinking();
+
+        appendMessageUI(
+          "assistant",
+          "System error: AI offline"
+        );
+      }
+    }
+  </script>
 
 </body>
 </html>
