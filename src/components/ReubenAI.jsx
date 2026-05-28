@@ -23,12 +23,7 @@ export default function ReubenAI({ user, activeChat }) {
         .eq("session_id", activeChat)
         .order("created_at", { ascending: true });
 
-      setMessages(
-        (data || []).map((m) => ({
-          role: m.role,
-          content: m.content,
-        }))
-      );
+      setMessages(data || []);
     };
 
     load();
@@ -41,35 +36,27 @@ export default function ReubenAI({ user, activeChat }) {
     setInput("");
     setLoading(true);
 
-    // UI update
+    // show instantly
     setMessages((prev) => [
       ...prev,
       { role: "user", content: text },
-      { role: "assistant", content: "..." },
+      { role: "assistant", content: "Thinking..." },
     ]);
 
     try {
-      // save user message
-      await supabase.from("chat_messages").insert([
-        {
-          session_id: activeChat,
-          user_id: user.id,
-          role: "user",
-          content: text,
-        },
-      ]);
+      const session = await supabase.auth.getSession();
 
-      // call AI
+      if (!session?.data?.session?.access_token) {
+        throw new Error("Not logged in");
+      }
+
       const res = await fetch(
         "https://whvzdutfyydshamwfhvu.supabase.co/functions/v1/reuben-ai",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${
-              (await supabase.auth.getSession()).data.session
-                .access_token
-            }`,
+            Authorization: `Bearer ${session.data.session.access_token}`,
           },
           body: JSON.stringify({
             message: text,
@@ -77,6 +64,10 @@ export default function ReubenAI({ user, activeChat }) {
           }),
         }
       );
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
 
       const data = await res.json();
 
@@ -105,7 +96,7 @@ export default function ReubenAI({ user, activeChat }) {
         const copy = [...prev];
         copy[copy.length - 1] = {
           role: "assistant",
-          content: "System error",
+          content: "Error: " + err.message,
         };
         return copy;
       });
@@ -130,6 +121,7 @@ export default function ReubenAI({ user, activeChat }) {
             {m.content}
           </div>
         ))}
+
         <div ref={endRef} />
       </div>
 

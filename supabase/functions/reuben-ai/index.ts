@@ -12,7 +12,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization")!;
+    const authHeader = req.headers.get("Authorization");
+
+    if (!authHeader) {
+      return new Response("Missing auth", { status: 401 });
+    }
+
     const token = authHeader.replace("Bearer ", "");
 
     const supabase = createClient(
@@ -35,7 +40,10 @@ Deno.serve(async (req) => {
 
     const { message, chatId } = await req.json();
 
-    // Get chat history
+    if (!message || !chatId) {
+      return new Response("Missing fields", { status: 400 });
+    }
+
     const { data: history } = await supabase
       .from("chat_messages")
       .select("role, content")
@@ -47,8 +55,7 @@ Deno.serve(async (req) => {
       .map((m) => `${m.role}: ${m.content}`)
       .join("\n");
 
-    // AI CALL
-    const res = await fetch(
+    const aiRes = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
@@ -61,8 +68,7 @@ Deno.serve(async (req) => {
           messages: [
             {
               role: "system",
-              content:
-                "You are ReubenAI, a production SaaS assistant.",
+              content: "You are ReubenAI. Be accurate and helpful.",
             },
             {
               role: "user",
@@ -73,11 +79,10 @@ Deno.serve(async (req) => {
       }
     );
 
-    const data = await res.json();
+    const data = await aiRes.json();
 
     const reply =
-      data?.choices?.[0]?.message?.content?.trim() ||
-      "No response";
+      data?.choices?.[0]?.message?.content || "No response";
 
     return new Response(
       JSON.stringify({ reply }),
@@ -91,10 +96,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     return new Response(
       JSON.stringify({ error: String(err) }),
-      {
-        status: 500,
-        headers: corsHeaders,
-      }
+      { status: 500, headers: corsHeaders }
     );
   }
 });
