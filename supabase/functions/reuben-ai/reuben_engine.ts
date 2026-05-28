@@ -10,6 +10,10 @@ export async function runReubenAI({
   userId,
   chatId,
 }) {
+  // =========================
+  // Environment Validation
+  // =========================
+
   const groqKey = Deno.env.get("GROQ_API_KEY");
 
   if (!groqKey) {
@@ -17,6 +21,10 @@ export async function runReubenAI({
       "GROQ_API_KEY is not set in Supabase Secrets."
     );
   }
+
+  // =========================
+  // Input Validation
+  // =========================
 
   if (!message || typeof message !== "string") {
     throw new Error("Invalid message input.");
@@ -32,22 +40,30 @@ export async function runReubenAI({
     relevant =
       retrieveRelevant([], message) || [];
   } catch (err) {
-    console.error("MEMORY_ENGINE_ERROR:", err);
+    console.error(
+      "MEMORY_RETRIEVAL_ERROR:",
+      err
+    );
   }
 
   let memoryBlock = "";
 
   try {
-    memoryBlock = compressMemory(relevant) || "";
+    memoryBlock =
+      compressMemory(relevant) || "";
   } catch (err) {
-    console.error("MEMORY_COMPRESS_ERROR:", err);
+    console.error(
+      "MEMORY_COMPRESSION_ERROR:",
+      err
+    );
   }
 
   // =========================
-  // Fetch Timeout
+  // Timeout Protection
   // =========================
 
-  const controller = new AbortController();
+  const controller =
+    new AbortController();
 
   const timeout = setTimeout(() => {
     controller.abort();
@@ -65,29 +81,43 @@ export async function runReubenAI({
         signal: controller.signal,
         headers: {
           Authorization: `Bearer ${groqKey}`,
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json",
         },
         body: JSON.stringify({
-          model: "llama3-70b-8192",
+          model:
+            "llama-3.3-70b-versatile",
+
           messages: [
             {
               role: "system",
-              content: `Memory: ${memoryBlock}`,
+              content: memoryBlock
+                ? `Memory:\n${memoryBlock}`
+                : "You are ReubenAI, a helpful AI assistant.",
             },
             {
               role: "user",
               content: message,
             },
           ],
+
           temperature: 0.7,
+          max_tokens: 1024,
         }),
       }
     );
 
-    // Read raw response first
-    const rawText = await response.text();
+    // =========================
+    // Read Raw Response
+    // =========================
 
-    // Handle API errors
+    const rawText =
+      await response.text();
+
+    // =========================
+    // Handle API Errors
+    // =========================
+
     if (!response.ok) {
       console.error(
         "GROQ_API_ERROR:",
@@ -96,11 +126,14 @@ export async function runReubenAI({
       );
 
       throw new Error(
-        `Groq API Error (${response.status})`
+        `Groq API Error (${response.status}): ${rawText}`
       );
     }
 
-    // Safely parse JSON
+    // =========================
+    // Safe JSON Parsing
+    // =========================
+
     let data;
 
     try {
@@ -116,8 +149,13 @@ export async function runReubenAI({
       );
     }
 
+    // =========================
+    // Extract Reply
+    // =========================
+
     const reply =
-      data?.choices?.[0]?.message?.content;
+      data?.choices?.[0]?.message
+        ?.content;
 
     return {
       success: true,
@@ -126,16 +164,17 @@ export async function runReubenAI({
         "No response generated.",
     };
   } catch (err) {
-    console.error("RUN_REUBEN_AI_ERROR:", err);
-
-    const errorMessage =
-      err instanceof Error
-        ? err.message
-        : String(err);
+    console.error(
+      "RUN_REUBEN_AI_ERROR:",
+      err
+    );
 
     return {
       success: false,
-      error: errorMessage,
+      error:
+        err instanceof Error
+          ? err.message
+          : String(err),
     };
   } finally {
     clearTimeout(timeout);
