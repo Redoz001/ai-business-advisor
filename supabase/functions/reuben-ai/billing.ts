@@ -1,8 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "npm:@supabase/supabase-js";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_ANON_KEY")!
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
 export async function checkUserLimit(userId: string) {
@@ -12,19 +12,21 @@ export async function checkUserLimit(userId: string) {
     .eq("id", userId)
     .single();
 
-  if (!data) throw new Error("User not found");
+  if (!data) {
+    throw new Error("User profile not found");
+  }
 
   const plan = data.plan || "free";
   const used = data.requests_used || 0;
 
-  const limits = {
+  const limits: Record<string, number> = {
     free: 20,
     pro: 2000,
     elite: 999999,
   };
 
   if (used >= limits[plan]) {
-    throw new Error("Daily limit reached. Upgrade plan.");
+    throw new Error("Upgrade required: limit reached");
   }
 
   await supabase
