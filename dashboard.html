@@ -1,8 +1,12 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
 
   <title>ReubenAI - Autonomous Core</title>
 
@@ -29,6 +33,20 @@
       background: #020617;
     }
 
+    pre {
+      overflow-x: auto;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      padding: 16px;
+      border-radius: 14px;
+      margin-top: 12px;
+    }
+
+    code {
+      color: #cbd5e1;
+      font-size: 13px;
+    }
+
     .typing-dot {
       animation: blink 1.3s infinite both;
     }
@@ -53,20 +71,6 @@
       100% {
         opacity: .2;
       }
-    }
-
-    pre {
-      overflow-x: auto;
-      background: #0f172a;
-      border: 1px solid #1e293b;
-      padding: 16px;
-      border-radius: 14px;
-      margin-top: 12px;
-    }
-
-    code {
-      color: #cbd5e1;
-      font-size: 13px;
     }
 
     .message-enter {
@@ -120,7 +124,7 @@
     <div class="border-t border-gray-800 p-4">
 
       <div class="text-xs font-mono text-gray-500">
-        REUBEN AI CORE V3
+        REUBEN AI CORE V4
       </div>
 
       <div class="text-[10px] text-gray-600 mt-1">
@@ -177,7 +181,6 @@
 
         <form
           id="queryForm"
-          onsubmit="handleQuery(event)"
           class="bg-gray-900 border border-gray-800 rounded-2xl p-2 flex items-center shadow-2xl"
         >
 
@@ -190,7 +193,8 @@
           />
 
           <button
-            type="submit"
+            id="sendBtn"
+            type="button"
             class="bg-emerald-600 hover:bg-emerald-500 transition px-5 py-3 rounded-xl text-sm font-semibold"
           >
             Send
@@ -205,10 +209,13 @@
   </main>
 
   <script>
+
     // ================= CONFIG =================
     const SUPABASE_URL =
       "https://whvzdutfyydshamwfhvu.supabase.co";
 
+    // IMPORTANT:
+    // Replace with your REAL anon key
     const SUPABASE_ANON_KEY =
       "YOUR_SUPABASE_ANON_KEY";
 
@@ -225,30 +232,46 @@
     // ================= STATE =================
     let activeSessionId = null;
 
-    // ================= LOAD =================
+    // ================= PAGE LOAD =================
     window.onload = async () => {
 
       await loadSessions();
 
     };
 
-    // ================= ENTER TO SEND =================
+    // ================= INPUT EVENTS =================
     const inputField =
       document.getElementById(
         "userInput"
       );
 
+    const sendBtn =
+      document.getElementById(
+        "sendBtn"
+      );
+
+    // ENTER KEY
     inputField.addEventListener(
-      "keypress",
+      "keydown",
       function (e) {
 
         if (e.key === "Enter") {
 
           e.preventDefault();
 
-          handleQuery(e);
+          handleQuery();
 
         }
+      }
+    );
+
+    // BUTTON CLICK
+    sendBtn.addEventListener(
+      "click",
+      function () {
+
+        handleQuery();
+
       }
     );
 
@@ -426,7 +449,7 @@
       });
     }
 
-    // ================= MESSAGE UI =================
+    // ================= APPEND MESSAGE =================
     function appendMessageUI(
       role,
       content
@@ -461,25 +484,35 @@
             ? "text-blue-400"
             : "text-emerald-400"
         }">
-          ${role === "user"
-            ? "YOU"
-            : "REUBEN AI"}
+
+          ${
+            role === "user"
+              ? "YOU"
+              : "REUBEN AI"
+          }
+
         </div>
 
         <div class="prose prose-invert max-w-none text-sm leading-7 text-gray-200">
+
           ${marked.parse(content)}
+
         </div>
       `;
 
-      wrapper.appendChild(bubble);
+      wrapper.appendChild(
+        bubble
+      );
 
-      stream.appendChild(wrapper);
+      stream.appendChild(
+        wrapper
+      );
 
       stream.scrollTop =
         stream.scrollHeight;
     }
 
-    // ================= THINKING =================
+    // ================= THINKING UI =================
     function showThinking() {
 
       const stream =
@@ -518,7 +551,9 @@
         </div>
       `;
 
-      stream.appendChild(wrapper);
+      stream.appendChild(
+        wrapper
+      );
 
       stream.scrollTop =
         stream.scrollHeight;
@@ -533,16 +568,14 @@
         );
 
       if (thinking) {
+
         thinking.remove();
+
       }
     }
 
     // ================= HANDLE QUERY =================
-    async function handleQuery(e) {
-
-      if (e) {
-        e.preventDefault();
-      }
+    async function handleQuery() {
 
       const input =
         document.getElementById(
@@ -556,32 +589,36 @@
 
       input.value = "";
 
-      // auto create session
+      // AUTO CREATE SESSION
       if (!activeSessionId) {
 
         await createNewSession();
 
       }
 
-      // append user instantly
+      // APPEND USER MESSAGE
       appendMessageUI(
         "user",
         message
       );
 
-      // save user message
+      // SAVE USER MESSAGE
       await client
         .from("chat_messages")
         .insert([
           {
             session_id:
               activeSessionId,
-            role: "user",
-            content: message
+
+            role:
+              "user",
+
+            content:
+              message
           }
         ]);
 
-      // thinking UI
+      // SHOW THINKING
       showThinking();
 
       try {
@@ -616,20 +653,23 @@
           data.reply ||
           "No AI response.";
 
-        // save assistant
+        // SAVE AI MESSAGE
         await client
           .from("chat_messages")
           .insert([
             {
               session_id:
                 activeSessionId,
+
               role:
                 "assistant",
+
               content:
                 reply
             }
           ]);
 
+        // APPEND AI MESSAGE
         appendMessageUI(
           "assistant",
           reply
@@ -647,7 +687,9 @@
         );
       }
     }
+
   </script>
 
 </body>
 </html>
+```
