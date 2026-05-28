@@ -17,37 +17,35 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     if (!activeChat) return;
 
     const load = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("chat_messages")
         .select("*")
         .eq("session_id", activeChat)
         .order("created_at", { ascending: true });
 
-      if (!error) setMessages(data || []);
+      setMessages(data || []);
     };
 
     load();
   }, [activeChat]);
 
-  // ================= SEND MESSAGE (FIXED) =================
   const sendMessage = async () => {
-    console.log("SEND CLICKED");
+    if (!input.trim() || loading) return;
 
-    if (!input.trim()) return;
-    if (!user) return;
-
+    const text = input;
+    setInput("");
     setLoading(true);
 
     try {
       let chatId = activeChat;
 
-      // 🔥 AUTO CREATE CHAT IF NONE EXISTS
+      // AUTO CREATE CHAT IF NONE
       if (!chatId) {
         const { data, error } = await supabase
           .from("chat_sessions")
           .insert([
             {
-              user_id: user.id,
+              user_id: user?.id || null,
               title: "New Chat",
             },
           ])
@@ -57,13 +55,8 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         if (error) throw error;
 
         chatId = data.id;
-
-        // IMPORTANT: sync state
-        if (setActiveChat) setActiveChat(chatId);
+        setActiveChat?.(chatId);
       }
-
-      const text = input;
-      setInput("");
 
       // UI update immediately
       setMessages((prev) => [
@@ -72,23 +65,17 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         { role: "assistant", content: "Thinking..." },
       ]);
 
-      // get auth session safely
+      // SAFE AUTH (no crash if not logged in)
       const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token || "";
 
-      const token = session?.data?.session?.access_token;
-
-      if (!token) {
-        throw new Error("User not logged in");
-      }
-
-      // CALL EDGE FUNCTION
       const res = await fetch(
         "https://whvzdutfyydshamwfhvu.supabase.co/functions/v1/reuben-ai",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            ...(token && { Authorization: `Bearer ${token}` }),
           },
           body: JSON.stringify({
             message: text,
@@ -97,15 +84,10 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         }
       );
 
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
       const data = await res.json();
 
       const reply = data?.reply || "No response";
 
-      // replace "Thinking..."
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = {
@@ -115,23 +97,21 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         return copy;
       });
 
-      // save assistant message
+      // SAVE MESSAGE (safe)
       await supabase.from("chat_messages").insert([
         {
           session_id: chatId,
-          user_id: user.id,
+          user_id: user?.id || null,
           role: "assistant",
           content: reply,
         },
       ]);
     } catch (err) {
-      console.error(err);
-
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = {
           role: "assistant",
-          content: "Error: " + err.message,
+          content: "System error: " + err.message,
         };
         return copy;
       });
@@ -143,7 +123,7 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
   return (
     <div className="flex flex-col h-full bg-black text-white">
 
-      {/* CHAT AREA */}
+      {/* CHAT */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((m, i) => (
           <div
