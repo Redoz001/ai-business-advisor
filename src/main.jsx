@@ -1,9 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+
 import App from "./App.jsx";
 import "./index.css";
 
-// Prevent app crash from silent root errors
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
@@ -11,7 +12,7 @@ if (!rootElement) {
 }
 
 ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
+  <BrowserRouter>
     <App />
-  </React.StrictMode>
+  </BrowserRouter>
 );

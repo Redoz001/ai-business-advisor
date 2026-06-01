@@ -1,102 +1,116 @@
-﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+﻿import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (req) => {
+const SYSTEM_PROMPT = `
+You are ReubenAI, a helpful assistant.
+
+CRITICAL RULES:
+- If asked who made you say you were made by ReubenAI Nexus,the ceo is Reuben Murimi,be confident,creative and concise
+- Never break words into spaced letters (NO "Re uben", NO "Trans l ating")
+- Never repeat greetings endlessly (avoid loops like "hey hey hey")
+- Always respond naturally with correct spacing
+- Never output JSON or raw system logs
+- Do not include debugging text or internal reasoning and use emojis when appropriate and in a professional manner
+- Be concise and human-like  and if asked a question be detailed and comprehensive in your answer, use clear paragraphs and avoid artificial formatting unless asked for  or where necessary for clarity
+`;
+
+serve(async (req) => {
+  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
+    const body = await req.json().catch(() => null);
 
-    if (!authHeader) {
-      return new Response("Missing auth", { status: 401 });
+    if (!body?.message) {
+      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const token = authHeader.replace("Bearer ", "");
+    const { message } = body;
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      {
-        global: {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      }
-    );
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("GROQ_API_KEY")}`,
+          },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            stream: true,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: message },
+            ],
+          }),
+        });
 
-    if (!user) {
-      return new Response("Unauthorized", { status: 401 });
-    }
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
 
-    const { message, chatId } = await req.json();
+        if (!reader) {
+          controller.close();
+          return;
+        }
 
-    if (!message || !chatId) {
-      return new Response("Missing fields", { status: 400 });
-    }
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
 
-    const { data: history } = await supabase
-      .from("chat_messages")
-      .select("role, content")
-      .eq("session_id", chatId)
-      .order("created_at", { ascending: true })
-      .limit(20);
+          const chunk = decoder.decode(value);
 
-    const context = (history || [])
-      .map((m) => `${m.role}: ${m.content}`)
-      .join("\n");
+          // SSE parsing safe
+          const lines = chunk.split("\n");
 
-    const aiRes = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${Deno.env.get("GROQ_API_KEY")}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.1-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content: "You are ReubenAI. Be accurate and helpful.",
-            },
-            {
-              role: "user",
-              content: `${context}\n\nUser: ${message}`,
-            },
-          ],
-        }),
-      }
-    );
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
 
-    const data = await aiRes.json();
+            const data = line.replace("data: ", "").trim();
 
-    const reply =
-      data?.choices?.[0]?.message?.content || "No response";
+            if (data === "[DONE]") continue;
 
-    return new Response(
-      JSON.stringify({ reply }),
-      {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+            try {
+              const json = JSON.parse(data);
+              const token = json?.choices?.[0]?.delta?.content;
+
+              if (token) {
+                controller.enqueue(encoder.encode(`data: ${token}\n\n`));
+              }
+            } catch (_) {
+              // ignore bad chunks
+            }
+          }
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: String(err) }),
-      { status: 500, headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

@@ -1,13 +1,30 @@
-import React from "react";
-// Updated import to point to your AI logic component
-import ChatCore from "./ReubenAI.jsx"; 
+import React, { useEffect } from "react";
+import ChatCore from "./ReubenAI.jsx";
 
-export default function Chat({ user, activeChat, memoryContext }) {
+export default function Chat({
+  user,
+  activeChat,
+  setActiveChat,
+}) {
 
   // =========================
-  // SAFETY CHECKS
+  // RESET CHAT STATE ON SWITCH
+  // (important for streaming stability)
+  // =========================
+  useEffect(() => {
+
+    return () => {
+      // cleanup hook for future:
+      // stop streaming, voice, listeners
+    };
+
+  }, [activeChat]);
+
+  // =========================
+  // NOT LOGGED IN
   // =========================
   if (!user) {
+
     return (
       <div style={styles.center}>
         Please log in to start chatting.
@@ -15,22 +32,29 @@ export default function Chat({ user, activeChat, memoryContext }) {
     );
   }
 
+  // =========================
+  // NO ACTIVE CHAT
+  // =========================
   if (!activeChat) {
+
     return (
       <div style={styles.center}>
-        No active conversation selected.
+        Select or create a conversation.
       </div>
     );
   }
 
+  // =========================
+  // CHAT UI
+  // =========================
   return (
     <div style={styles.chatWrapper}>
 
-      {/* memoryContext is now passed to your AI engine */}
       <ChatCore
+        key={activeChat}   // IMPORTANT FIX
         user={user}
         activeChat={activeChat}
-        memoryContext={memoryContext} 
+        setActiveChat={setActiveChat}
       />
 
     </div>
@@ -38,12 +62,15 @@ export default function Chat({ user, activeChat, memoryContext }) {
 }
 
 const styles = {
+
   chatWrapper: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
     background: "#0f0f0f",
     overflow: "hidden",
+    minWidth: 0,
+    height: "100%",
   },
 
   center: {
@@ -54,5 +81,7 @@ const styles = {
     color: "#888",
     background: "#0f0f0f",
     fontSize: "14px",
+    padding: "20px",
+    textAlign: "center",
   },
 };

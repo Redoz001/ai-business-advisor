@@ -2,6 +2,7 @@
   "imports": {
     "@supabase/functions-js": "jsr:@supabase/functions-js@^2",
     "std/": "https://deno.land/std@0.224.0/",
-    "cors": "https://deno.land/x/cors@v1.2.2/mod.ts"
+    "cors": "https://deno.land/x/cors@v1.2.2/mod.ts",
+    "@": "./"
   }
 }
