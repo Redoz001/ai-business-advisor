@@ -1,256 +1,196 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "./lib/supabase.js";
 
 import Auth from "./Auth.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ReubenAI from "./components/ReubenAI.jsx";
 
+/* ===============================
+   CALLBACK (FIXED)
+================================= */
+function AuthCallback() {
+  useEffect(() => {
+    const handleAuth = async () => {
+      // wait for Supabase to store session from URL
+      await supabase.auth.getSession();
+
+      setTimeout(() => {
+        window.location.replace("/");
+      }, 400);
+    };
+
+    handleAuth();
+  }, []);
+
+  return (
+    <div className="h-screen flex items-center justify-center bg-black text-white">
+      Signing you in...
+    </div>
+  );
+}
+
+/* ===============================
+   APP
+================================= */
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(undefined);
   const [activeChat, setActiveChat] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [appReady, setAppReady] = useState(false);
 
-  /**
-   * ================================
-   * AUTH SESSION RESTORE
-   * ================================
-   */
+  const loadingSessionsRef = useRef(false);
+
+  /* ===============================
+     AUTH
+  =============================== */
   useEffect(() => {
-    let mounted = true;
+    let alive = true;
 
     const initAuth = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-
-        if (error) console.error("Session error:", error);
-        if (!mounted) return;
-
-        setUser(data?.session?.user || null);
-      } catch (err) {
-        console.error("Session restore failed:", err);
-      } finally {
-        if (mounted) setAppReady(true);
-      }
+      const { data } = await supabase.auth.getSession();
+      if (alive) setUser(data?.session?.user ?? null);
     };
 
     initAuth();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setAppReady(true);
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (alive) setUser(session?.user ?? null);
     });
 
     return () => {
-      mounted = false;
-      subscription.unsubscribe();
+      alive = false;
+      sub.subscription.unsubscribe();
     };
   }, []);
 
-  /**
-   * ================================
-   * LOAD CHAT SESSIONS
-   * ================================
-   */
+  /* ===============================
+     LOAD CHAT SESSIONS
+  =============================== */
+  const loadSessions = async () => {
+    if (!user?.id) return;
+    if (loadingSessionsRef.current) return;
+
+    loadingSessionsRef.current = true;
+
+    const { data } = await supabase
+      .from("chat_sessions")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    setSessions(data || []);
+
+    loadingSessionsRef.current = false;
+  };
+
   useEffect(() => {
-    if (!user) return;
+    if (user?.id) loadSessions();
+  }, [user?.id]);
 
-    const loadSessions = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("chat_sessions")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        setSessions(data || []);
-
-        if (data?.length && !activeChat) {
-          setActiveChat(data[0].id);
-        }
-      } catch (err) {
-        console.error("Load sessions error:", err);
-      }
-    };
-
-    loadSessions();
-  }, [user]);
-
-  /**
-   * ================================
-   * REALTIME DATABASE SYNC
-   * ================================
-   */
+  /* ===============================
+     REALTIME UPDATES
+  =============================== */
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
 
     const channel = supabase
-      .channel("chat_sessions_global")
+      .channel("chat_sessions_realtime")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "chat_sessions" },
-        (payload) => {
-          const updated = payload.new;
-          if (!updated) return;
-
-          setSessions((prev) => {
-            const exists = prev.find((s) => s.id === updated.id);
-
-            if (!exists) return [updated, ...prev];
-
-            return prev.map((s) =>
-              s.id === updated.id ? { ...s, ...updated } : s
-            );
-          });
-        }
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_sessions",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => loadSessions()
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user?.id]);
 
-  /**
-   * ================================
-   * CREATE CHAT
-   * ================================
-   */
-  const createNewChat = async () => {
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("chat_sessions")
-        .insert([{ user_id: user.id, title: "New Chat" }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setSessions((prev) => [data, ...prev]);
-      setActiveChat(data.id);
-    } catch (err) {
-      console.error("Create chat error:", err);
+  /* ===============================
+     AUTO SELECT CHAT
+  =============================== */
+  useEffect(() => {
+    if (!activeChat && sessions.length > 0) {
+      setActiveChat(sessions[0].id);
     }
-  };
+  }, [sessions]);
 
-  /**
-   * ================================
-   * DELETE CHAT
-   * ================================
-   */
-  const deleteChat = async (id) => {
-    try {
-      await supabase.from("chat_sessions").delete().eq("id", id);
-
-      setSessions((prev) => prev.filter((s) => s.id !== id));
-
-      if (activeChat === id) setActiveChat(null);
-    } catch (err) {
-      console.error("Delete chat error:", err);
-    }
-  };
-
-  /**
-   * ================================
-   * OPTIMISTIC TITLE UPDATE (FIX)
-   * ================================
-   */
-  const updateChatTitle = (id, title) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, title } : s))
-    );
-  };
-
-  /**
-   * ================================
-   * LOADING STATE
-   * ================================
-   */
-  if (!appReady) {
+  /* ===============================
+     LOADING STATE
+  =============================== */
+  if (user === undefined) {
     return (
-      <div className="h-screen bg-black text-white flex items-center justify-center">
-        Loading ReubenAI...
+      <div className="h-screen flex items-center justify-center bg-black text-white">
+        Loading...
       </div>
     );
   }
 
-  /**
-   * ================================
-   * AUTH SCREEN
-   * ================================
-   */
-  if (!appReady) {
   return (
-    <div className="h-screen bg-black text-white flex items-center justify-center">
-      Loading ReubenAI...
-    </div>
-  );
- }
+    <Routes>
+      {/* AUTH CALLBACK */}
+      <Route path="/auth/callback" element={<AuthCallback />} />
 
-   if (!user) {
-   return <Auth setUser={setUser} />;
- }
+      {/* LOGIN */}
+      <Route
+        path="/auth"
+        element={user ? <Navigate to="/" /> : <Auth />}
+      />
 
-  /**
-   * ================================
-   * MAIN UI
-   * ================================
-   */
-  return (
-    <div className="h-screen flex bg-black text-white overflow-hidden">
+      {/* MAIN APP */}
+      <Route
+        path="/"
+        element={
+          user ? (
+            <div className="h-screen flex bg-black text-white overflow-hidden">
 
-      {/* SIDEBAR */}
-      <div
-        className={`
-          ${sidebarOpen ? "w-64" : "w-0"}
-          transition-all duration-300
-          overflow-hidden
-          border-r border-zinc-800
-        `}
-      >
-        <Sidebar
-          sessions={sessions}
-          activeChat={activeChat}
-          setActiveChat={setActiveChat}
-          createNewChat={createNewChat}
-          deleteChat={deleteChat}
-          updateChatTitle={updateChatTitle}
-          user={user}
-        />
-      </div>
+              {/* SIDEBAR */}
+              <div
+                className={`${
+                  sidebarOpen ? "w-64" : "w-0"
+                } transition-all duration-300 overflow-hidden`}
+              >
+                <Sidebar
+                  user={user}
+                  sessions={sessions}
+                  refreshSessions={loadSessions}
+                  activeChat={activeChat}
+                  setActiveChat={setActiveChat}
+                  createNewChat={() => setActiveChat(null)}
+                />
+              </div>
 
-      {/* MAIN AREA */}
-      <div className="flex-1 flex flex-col min-w-0">
+              {/* MAIN */}
+              <div className="flex-1 flex flex-col">
 
-        {/* TOP BAR */}
-        <div className="h-14 border-b border-zinc-800 flex items-center px-3 shrink-0">
-          <button
-            onClick={() => setSidebarOpen((p) => !p)}
-            className="text-white"
-          >
-            ☰
-          </button>
+                {/* TOP BAR */}
+                <div className="h-14 border-b border-zinc-800 flex items-center px-3">
+                  <button onClick={() => setSidebarOpen((p) => !p)}>
+                    ☰
+                  </button>
+                  <h1 className="ml-3 font-bold">ReuNexus</h1>
+                </div>
 
-          <h1 className="ml-3 font-bold">ReubenAI</h1>
-        </div>
-
-        {/* CHAT */}
-        <div className="flex-1 overflow-hidden">
-          <ReubenAI
-            user={user}
-            activeChat={activeChat}
-            setActiveChat={setActiveChat}
-          />
-        </div>
-
-      </div>
-    </div>
+                {/* CHAT */}
+                <ReubenAI
+                  user={user}
+                  activeChat={activeChat}
+                  setActiveChat={setActiveChat}
+                />
+              </div>
+            </div>
+          ) : (
+            <Navigate to="/auth" />
+          )
+        }
+      />
+    </Routes>
   );
 }

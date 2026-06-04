@@ -1,9 +1,0 @@
-useEffect(() => {
-  const handle = async () => {
-    await supabase.auth.exchangeCodeForSession(window.location.href);
-
-    window.location.replace("/");
-  };
-
-  handle();
-}, []);

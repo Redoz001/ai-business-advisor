@@ -1,319 +1,258 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { askGroq } from "./providers/groq.ts";
+import { askOpenAI } from "./providers/openai.ts";
+import { searchTavily } from "./providers/tavily.ts";
 
-import {
-  getConversationHistory,
-  getLongTermMemory,
-  saveMessage,
-} from "./memory.ts";
+import { generateImage } from "./providers/runway.ts";
+import { generateSpeech } from "./providers/elevenlabs.ts";
 
-import { embed } from "./embeddings.ts";
+/* =========================
+   🌐 WEB DETECTOR
+========================= */
+function needsWeb(message: string) {
+  const msg = message.toLowerCase();
 
-import {
-  retrieveRAG,
-} from "./rag.ts";
-
-import { runTools } from "./tools.ts";
-
-import { routeRequest } from "./router.ts";
-
-import {
-  buildSystemPrompt,
-  buildMessages,
-} from "./prompt.ts";
-
-/* =========================================================
-   ENV
-========================================================= */
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_KEY = Deno.env.get(
-  "SUPABASE_SERVICE_ROLE_KEY"
-);
-
-const GROQ_KEY = Deno.env.get(
-  "GROQ_API_KEY"
-);
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error(
-    "Missing Supabase environment variables"
+  return (
+    msg.includes("today") ||
+    msg.includes("current") ||
+    msg.includes("latest") ||
+    msg.includes("news") ||
+    msg.includes("who is") ||
+    msg.includes("price") ||
+    msg.includes("what is")
   );
 }
 
-if (!GROQ_KEY) {
-  throw new Error(
-    "Missing GROQ_API_KEY"
+/* =========================
+   🎬 RUNWAY DETECTOR
+========================= */
+function needsRunway(message: string) {
+  const msg = message.toLowerCase();
+
+  return (
+    msg.includes("image") ||
+    msg.includes("picture") ||
+    msg.includes("draw") ||
+    msg.includes("render") ||
+    msg.includes("photo") ||
+    msg.includes("generate image") ||
+    msg.includes("create image") ||
+    msg.includes("make image") ||
+    msg.includes("video") ||
+    msg.includes("clip")
   );
 }
 
-createClient(
-  SUPABASE_URL,
-  SUPABASE_KEY
-);
+/* =========================
+   🔊 ELEVENLABS DETECTOR
+========================= */
+function needsElevenLabs(message: string) {
+  const msg = message.toLowerCase();
 
-/* =========================================================
-   CONFIG
-========================================================= */
-
-const MODEL =
-  "llama-3.3-70b-versatile";
-
-const TEMPERATURE = 0.7;
-
-const TIMEOUT_MS = 30000;
-
-/* =========================================================
-   GROQ
-========================================================= */
-
-async function callGroq(
-  messages: any[]
-) {
-  const controller =
-    new AbortController();
-
-  const timeout = setTimeout(
-    () => controller.abort(),
-    TIMEOUT_MS
+  return (
+    msg.includes("speak") ||
+    msg.includes("voice") ||
+    msg.includes("audio") ||
+    msg.includes("read") ||
+    msg.includes("tts") ||
+    msg.includes("elevenlabs")
   );
+}
+
+/* =========================
+   🧠 SMART ROUTER (NO KEYWORDS DEPENDENCY)
+========================= */
+async function routeModel(message: string): Promise<"openai" | "groq"> {
+  try {
+    const decision = await askGroq(`
+You are an AI routing engine.
+
+Decide which model should handle this request.
+
+RULES:
+- openai → complex reasoning, coding, debugging, architecture, deep explanation, analysis, planning
+- groq → simple Q&A, short answers, casual chat, basic info
+
+Return ONLY valid JSON:
+{ "model": "openai" | "groq", "confidence": 0-1 }
+
+User message:
+${message}
+`);
+
+    const parsed = JSON.parse(decision);
+
+    if (parsed?.model === "openai") return "openai";
+    return "groq";
+  } catch {
+    return "groq";
+  }
+}
+
+/* =========================
+   🧹 HISTORY SANITIZER
+========================= */
+function sanitizeHistory(history: any[]) {
+  if (!Array.isArray(history)) return [];
+
+  return history
+    .filter(m => m?.content && typeof m.content === "string")
+    .slice(-10)
+    .map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+}
+
+/* =========================
+   🚀 MAIN ENGINE
+========================= */
+export async function routeRequest(message: string, context: any) {
+  const history = sanitizeHistory(context?.sessionHistory || []);
+
+  let webContext = "";
 
   try {
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
+    /* =========================
+       🌐 WEB SEARCH
+    ========================= */
+    if (needsWeb(message)) {
+      console.log("🌐 Tavily search triggered");
 
-        signal: controller.signal,
+      try {
+        const search = await searchTavily(message);
 
-        headers: {
-          Authorization:
-            `Bearer ${GROQ_KEY}`,
-
-          "Content-Type":
-            "application/json",
-        },
-
-        body: JSON.stringify({
-          model: MODEL,
-          temperature: TEMPERATURE,
-          messages,
-        }),
+        webContext =
+          search?.answer ||
+          search?.results?.map((r: any) => r.content).join("\n") ||
+          "";
+      } catch (err: any) {
+        console.warn("Tavily failed:", err.message);
+        webContext = "";
       }
-    );
-
-    const raw =
-      await response.text();
-
-    if (!response.ok) {
-      console.error(
-        "Groq Error:",
-        raw
-      );
-
-      throw new Error(
-        `Groq request failed (${response.status})`
-      );
     }
 
-    const data = JSON.parse(raw);
+    const enrichedMessage = webContext
+      ? `
+You are ReuNexus AI (Grounded Mode).
 
-    const reply =
-      data?.choices?.[0]?.message
-        ?.content;
+STRICT RULES:
+- Use ONLY the provided context
+- Do NOT use prior knowledge
+- Do NOT hallucinate or assume missing facts
+- If context is insufficient, say: "not found in sources"
+- If asked about who made you always say: company is RemuAI, CEO Reuben Murimi
+- Always think intelligently and respond confidently
 
-    if (!reply) {
-      throw new Error(
-        "No model response"
-      );
+CONTEXT:
+${webContext}
+
+QUESTION:
+${message}
+`
+      : message;
+
+    /* =========================
+       🎬 RUNWAY (IMAGE/VIDEO)
+    ========================= */
+    if (needsRunway(message)) {
+      console.log("🎬 Runway triggered");
+
+      try {
+        const imageResult = await generateImage(message);
+
+        const finalUrl =
+          typeof imageResult === "string"
+            ? imageResult
+            : imageResult?.output_url ||
+              imageResult?.url ||
+              imageResult?.payload ||
+              (Array.isArray(imageResult?.output) ? imageResult.output[0] : null) ||
+              (Array.isArray(imageResult?.result) ? imageResult.result[0] : null);
+
+        if (!finalUrl || typeof finalUrl !== "string") {
+          throw new Error("No valid image URL returned from Runway");
+        }
+
+        return {
+          type: "image",
+          payload: finalUrl,
+          webUsed: false,
+          mode: "runway",
+        };
+      } catch (err: any) {
+        console.warn("Runway failed:", err.message);
+
+        return {
+          type: "text",
+          payload: "Image generation failed.",
+          webUsed: false,
+          mode: "runway-error",
+        };
+      }
     }
 
-    return reply;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+    /* =========================
+       🔊 ELEVENLABS
+    ========================= */
+    if (needsElevenLabs(message)) {
+      console.log("🔊 ElevenLabs triggered");
 
-/* =========================================================
-   MAIN ENGINE
-========================================================= */
+      try {
+        const audioUrl = await generateSpeech(message);
 
-export async function runReubenAI({
-  message,
-  userId,
-  chatId,
-}: {
-  message: string;
-  userId: string;
-  chatId: string;
-}) {
-  const started =
-    performance.now();
+        return {
+          type: "audio",
+          payload: audioUrl,
+          webUsed: false,
+          mode: "elevenlabs",
+        };
+      } catch (err: any) {
+        console.warn("ElevenLabs failed:", err.message);
 
-  if (!message?.trim()) {
-    throw new Error(
-      "Message is required"
-    );
-  }
-
-  /* =====================================================
-     SAVE USER MESSAGE
-  ===================================================== */
-
-  await saveMessage(
-    chatId,
-    userId,
-    "user",
-    message
-  );
-
-  /* =====================================================
-     ROUTER
-  ===================================================== */
-
-  const route =
-    routeRequest(message);
-
-  /* =====================================================
-     LOAD MEMORY
-  ===================================================== */
-
-  const [
-    history,
-    longMemory,
-  ] = await Promise.all([
-    getConversationHistory(
-      chatId
-    ),
-
-    getLongTermMemory(
-      userId
-    ),
-  ]);
-
-  /* =====================================================
-     TOOLS
-  ===================================================== */
-
-  let toolContext = "";
-
-  try {
-    const toolResult =
-      await runTools(message);
-
-    if (toolResult) {
-      toolContext =
-        JSON.stringify(
-          toolResult,
-          null,
-          2
-        );
+        return {
+          type: "text",
+          payload: "Audio generation failed.",
+          webUsed: false,
+          mode: "elevenlabs-error",
+        };
+      }
     }
-  } catch (err) {
-    console.error(
-      "Tool Error:",
-      err
-    );
+
+    /* =========================
+       🧠 SMART MODEL ROUTING
+    ========================= */
+    const model = await routeModel(message);
+
+    let result = "";
+
+    try {
+      if (model === "openai") {
+        console.log("🧠 OpenAI Brain");
+        result = await askOpenAI(enrichedMessage, history);
+      } else {
+        console.log("⚡ Groq Brain");
+        result = await askGroq(enrichedMessage, history);
+      }
+    } catch (err) {
+      console.warn("Primary brain failed, switching fallback...");
+      result = await askGroq(enrichedMessage, history);
+    }
+
+    return {
+      type: "text",
+      payload: result || "No response generated.",
+      webUsed: !!webContext,
+      mode: webContext ? "grounded" : "llm",
+    };
+
+  } catch (err: any) {
+    console.error("routeRequest fatal error:", err);
+
+    return {
+      type: "text",
+      payload: "System error in ReuNexus AI.",
+      webUsed: false,
+      mode: "error",
+    };
   }
-
-  /* =====================================================
-     RAG
-  ===================================================== */
-
-  let ragContext = "";
-
-  try {
-    const vector =
-      await embed(message);
-
-    const rag =
-      await retrieveRAG(
-        vector
-      );
-
-    ragContext =
-      rag.combinedContext;
-  } catch (err) {
-    console.error(
-      "RAG Error:",
-      err
-    );
-  }
-
-  /* =====================================================
-     PROMPT
-  ===================================================== */
-
-  const systemPrompt =
-    buildSystemPrompt({
-      memory: longMemory,
-      ragContext,
-      toolContext,
-      mode:
-        route.mode ??
-        "chat",
-    });
-
-  const messages =
-    buildMessages({
-      systemPrompt,
-      history,
-      userMessage:
-        message,
-    });
-
-  /* =====================================================
-     GENERATION
-  ===================================================== */
-
-  const reply =
-    await callGroq(
-      messages
-    );
-
-  /* =====================================================
-     SAVE ASSISTANT
-  ===================================================== */
-
-  await saveMessage(
-    chatId,
-    userId,
-    "assistant",
-    reply
-  );
-
-  /* =====================================================
-     DIAGNOSTICS
-  ===================================================== */
-
-  const latencyMs =
-    Math.round(
-      performance.now() -
-        started
-    );
-
-  return {
-    reply,
-
-    diagnostics: {
-      model: MODEL,
-
-      latencyMs,
-
-      route:
-        route.mode,
-
-      historyMessages:
-        history.length,
-
-      ragUsed:
-        Boolean(
-          ragContext
-        ),
-
-      toolUsed:
-        Boolean(
-          toolContext
-        ),
-    },
-  };
 }

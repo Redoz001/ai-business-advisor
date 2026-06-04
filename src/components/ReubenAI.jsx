@@ -1,311 +1,285 @@
-import React, { useState, useEffect, useRef } from "react";
-import { supabase } from "../lib/supabase";
+import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { supabase } from "../lib/supabase";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-const API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
-
-function createMessage(role, content) {
-  return {
-    id: crypto.randomUUID(),
-    role,
-    content,
-  };
-}
-
-const cleanText = (text) => {
-  return text
-    .replace(/\s+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .trim();
-};
-
-export default function ReubenAI({ user, activeChat, setActiveChat }) {
+export default function ReuNexus({ activeChat, user }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef(null);
 
-  const [isStreaming, setIsStreaming] = useState(false);
+  const sessionRef = useRef(activeChat);
+  const titleGeneratedRef = useRef(false);
 
-  // ✅ VOICE RECORDER STATE
-  const [isRecording, setIsRecording] = useState(false);
-  const recognitionRef = useRef(null);
+  /* =========================
+     🔥 ROTATING WELCOME MESSAGES
+  ========================= */
+  const welcomeMessages = [
+    (name) => `Hey ${name}, how can I help you today?`,
+    (name) => `Welcome back ${name}. What are we building today?`,
+    (name) => `Hi ${name} 👋 Ask me anything.`,
+    (name) => `Good to see you ${name}. Ready when you are.`,
+    (name) => `Hey ${name}, let’s solve something today.`,
+    (name) => `Hello ${name}. What would you like to explore?`,
+    (name) => `Hi ${name}, I’m here to help.`,
+    (name) => `Hey ${name}, your AI assistant is ready.`,
+    (name) => `Welcome ${name}. Let’s get started.`,
+    (name) => `Yo ${name}! What are we working on today?`,
+  ];
 
-  const lastPromptRef = useRef("");
-  const abortRef = useRef(null);
-  const endRef = useRef(null);
+  const getUserName = () => {
+    if (!user?.email) return "there";
+    return user.email.split("@")[0];
+  };
 
-  // ✅ prevents zombie stream updates after STOP
-  const streamActiveRef = useRef(false);
+  const [welcomeMessage, setWelcomeMessage] = useState("");
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const name = getUserName();
+    const random =
+      welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
 
+    setWelcomeMessage(random(name));
+  }, [activeChat, user]);
+
+  /* =========================
+     TITLE GENERATION
+  ========================= */
+  const generateFallbackTitle = (text) => {
+    return text
+      .replace(/[^\w\s]/g, "")
+      .split(" ")
+      .slice(0, 5)
+      .join(" ");
+  };
+
+  const generateAITitle = async (text) => {
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            message: text,
+            mode: "title",
+          }),
+        }
+      );
+
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : null;
+
+      return data?.payload || generateFallbackTitle(text);
+    } catch {
+      return generateFallbackTitle(text);
+    }
+  };
+
+  /* =========================
+     CHAT SYNC
+  ========================= */
   useEffect(() => {
+    sessionRef.current = activeChat;
+    setMessages([]);
+    titleGeneratedRef.current = false;
+
     if (!activeChat) return;
+    loadMessages(activeChat);
+  }, [activeChat]);
 
-    (async () => {
-      const { data } = await supabase
-        .from("chat_messages")
-        .select("*")
-        .eq("session_id", activeChat)
-        .order("created_at", { ascending: true });
+  const loadMessages = async (chatId) => {
+    const { data } = await supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("session_id", chatId)
+      .order("created_at", { ascending: true });
 
+    if (data) {
       setMessages(
-        (data || []).map((m) => ({
-          id: crypto.randomUUID(),
+        data.map((m) => ({
+          id: m.id,
           role: m.role,
           content: m.content,
         }))
       );
-    })();
-  }, [activeChat]);
-
-  const createChat = async () => {
-    const { data } = await supabase
-      .from("chat_sessions")
-      .insert([{ user_id: user?.id, title: "New Chat" }])
-      .select()
-      .single();
-
-    setActiveChat(data.id);
-    return data.id;
-  };
-
-  const streamResponse = async (res, onToken) => {
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      if (!streamActiveRef.current) break; // ✅ STOP SAFETY
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        if (trimmed.startsWith("data:")) {
-          const data = trimmed.replace("data: ", "");
-
-          if (data === "[DONE]") return;
-
-          try {
-            const json = JSON.parse(data);
-            const token = json?.choices?.[0]?.delta?.content;
-            if (token && streamActiveRef.current) onToken(token);
-          } catch {
-            if (streamActiveRef.current) onToken(data);
-          }
-        }
-      }
     }
   };
 
-  const sendMessage = async (overrideText = null) => {
-    if ((!input.trim() && !overrideText) || loading) return;
+  /* =========================
+     AUTO SCROLL
+  ========================= */
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
+  }, [messages]);
 
-    const text = overrideText ?? input;
+  /* =========================
+     TYPE EFFECT
+  ========================= */
+  const typeMessage = (text, id) => {
+    let i = 0;
 
+    const interval = setInterval(() => {
+      i++;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, content: text.slice(0, i) } : m
+        )
+      );
+      if (i >= text.length) clearInterval(interval);
+    }, 8);
+  };
+
+  /* =========================
+     SEND MESSAGE
+  ========================= */
+  const send = async () => {
+    if (!input.trim() || loading || !activeChat) return;
+
+    const text = input;
     setInput("");
     setLoading(true);
-    setIsStreaming(true);
-    streamActiveRef.current = true;
 
-    lastPromptRef.current = text;
+    const userMsg = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+    };
 
-    const chatId = activeChat || (await createChat());
-
-    const assistantId = crypto.randomUUID();
+    const aiId = crypto.randomUUID();
 
     setMessages((prev) => [
       ...prev,
-      createMessage("user", text),
-      { id: assistantId, role: "assistant", content: "" },
+      userMsg,
+      { id: aiId, role: "assistant", content: "" },
     ]);
 
-    await supabase.from("chat_messages").insert([
-      {
-        session_id: chatId,
-        user_id: user?.id,
-        role: "user",
-        content: text,
-      },
-    ]);
+    /* TITLE (UNCHANGED LOGIC) */
+    if (!titleGeneratedRef.current) {
+      titleGeneratedRef.current = true;
+
+      const fallback = generateFallbackTitle(text);
+
+      await supabase
+        .from("chat_sessions")
+        .update({ title: fallback })
+        .eq("id", activeChat);
+
+      generateAITitle(text).then((aiTitle) => {
+        if (aiTitle) {
+          supabase
+            .from("chat_sessions")
+            .update({ title: aiTitle })
+            .eq("id", activeChat);
+        }
+      });
+    }
+
+    await supabase.from("chat_messages").insert({
+      session_id: activeChat,
+      role: "user",
+      content: text,
+    });
 
     try {
-      abortRef.current = new AbortController();
-
-      const res = await fetch(API_URL, {
-        method: "POST",
-        signal: abortRef.current.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          chatId,
-          userId: user?.id ?? null,
-        }),
-      });
-
-      let full = "";
-
-      await streamResponse(res, (token) => {
-        full += token;
-
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, content: cleanText(full) }
-              : m
-          )
-        );
-      });
-
-      await supabase.from("chat_messages").insert([
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`,
         {
-          session_id: chatId,
-          user_id: user?.id,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            message: text,
+            context: { sessionHistory: messages.slice(-6) },
+          }),
+        }
+      );
+
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : null;
+
+      const responseText = data?.payload || "";
+
+      typeMessage(responseText, aiId);
+
+      await supabase.from("chat_messages").insert({
+        session_id: activeChat,
+        role: "assistant",
+        content: responseText,
+      });
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
           role: "assistant",
-          content: cleanText(full),
+          content: "⚠️ " + err.message,
         },
       ]);
-    } catch (err) {
-      console.error(err);
     } finally {
       setLoading(false);
-      setIsStreaming(false);
-      streamActiveRef.current = false;
-    }
-  };
-
-  // ✅ STOP (FIXED)
-  const stopGenerating = () => {
-    streamActiveRef.current = false;
-    abortRef.current?.abort();
-    setLoading(false);
-    setIsStreaming(false);
-  };
-
-  // ✅ REGENERATE (FIXED)
-  const regenerate = () => {
-    if (loading || !lastPromptRef.current) return;
-    sendMessage(lastPromptRef.current);
-  };
-
-  // ✅ VOICE RECORDER (WEB SPEECH API)
-  const toggleVoice = () => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      alert("Voice recognition not supported in this browser");
-      return;
-    }
-
-    if (!recognitionRef.current) {
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.lang = "en-US";
-
-      recognitionRef.current.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setInput((prev) => prev + " " + transcript);
-      };
-
-      recognitionRef.current.onend = () => {
-        setIsRecording(false);
-      };
-    }
-
-    if (isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-    } else {
-      recognitionRef.current.start();
-      setIsRecording(true);
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-black text-white">
+    <div className="flex flex-col h-full bg-zinc-950 text-white w-full">
 
-      {/* HEADER */}
-      <div className="p-3 border-b border-zinc-800 flex justify-between">
-        <div className="font-bold">ReubenAI</div>
-
-        <div className="flex gap-3">
-          <button onClick={regenerate} className="text-blue-400 text-sm">
-            Regenerate
-          </button>
-        </div>
-      </div>
-
-      {/* CHAT */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`p-3 rounded-xl max-w-[80%] ${
-              m.role === "user"
-                ? "bg-emerald-400 text-black ml-auto"
-                : "bg-zinc-900"
-            }`}
-          >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {m.content}
-            </ReactMarkdown>
+      {/* CHAT AREA */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4"
+      >
+        {messages.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-zinc-500 text-center px-4 leading-relaxed">
+            {welcomeMessage}
           </div>
-        ))}
-        <div ref={endRef} />
+        ) : (
+          messages.map((m) => (
+            <div
+              key={m.id}
+              className={`flex ${
+                m.role === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
+              <div className="max-w-[92%] md:max-w-xl p-3 rounded bg-zinc-800 whitespace-pre-wrap leading-relaxed">
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => (
+                      <p className="mb-3 leading-7">{children}</p>
+                    ),
+                  }}
+                >
+                  {m.content}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* INPUT AREA */}
-      <div className="p-3 border-t border-zinc-800 flex gap-2 items-center">
-
-        <textarea
+      {/* INPUT */}
+      <div className="p-2 md:p-3 border-t border-zinc-800 flex gap-2">
+        <input
+          className="flex-1 p-2 bg-zinc-900 rounded outline-none"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="flex-1 bg-zinc-900 p-3 rounded-xl"
-          placeholder="Ask ReubenAI..."
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="Ask ReuNexus Anything..."
         />
-
-        {/* 🎤 VOICE BUTTON */}
         <button
-          onClick={toggleVoice}
-          className={`px-3 py-2 rounded-xl border transition ${
-            isRecording
-              ? "bg-red-500 text-white"
-              : "bg-zinc-800 text-white"
-          }`}
+          onClick={send}
+          className="px-3 md:px-4 py-2 bg-zinc-800 rounded"
         >
-          🎤
-        </button>
-
-        {/* ⛔ STOP */}
-        {isStreaming && (
-          <button
-            onClick={stopGenerating}
-            className="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500"
-          >
-            ⛔
-          </button>
-        )}
-
-        {/* SEND */}
-        <button
-          onClick={() => sendMessage()}
-          className="bg-emerald-400 text-black px-4 py-2 rounded-xl font-bold"
-        >
-          Send
+          {loading ? "..." : "Send"}
         </button>
       </div>
     </div>
