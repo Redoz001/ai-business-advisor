@@ -1,31 +1,120 @@
-export async function askOpenAI(content: string, history: any[]) {
+export async function askOpenAI(
+  content: string,
+  history: any[]
+) {
   const key = Deno.env.get("OPENAI_API_KEY");
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-
-      messages: [
-        {
-          role: "system",
-          content: "You are Reuben AI (deep reasoning brain).",
-        },
-        ...history,
-        { role: "user", content },
-      ],
-    }),
-  });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error("OpenAI Error");
+  if (!key) {
+    throw new Error(
+      "Missing OPENAI_API_KEY"
+    );
   }
 
-  return data.choices[0].message.content;
+  const safeHistory = (history || [])
+    .filter(
+      (m) =>
+        m &&
+        typeof m.content === "string" &&
+        typeof m.role === "string"
+    )
+    .slice(-15)
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+  const controller = new AbortController();
+
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 30000);
+
+  try {
+    const res = await fetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+
+          messages: [
+            {
+              role: "system",
+              content: `
+You are ReuNexus AI.
+
+ROLE:
+You are the advanced reasoning engine of ReuNexus AI.
+
+CORE PRINCIPLES:
+- Think carefully before answering
+- Use logic and evidence
+- Be accurate and reliable
+- Never invent facts
+- If uncertain, clearly say so
+- Explain complex ideas simply
+- Focus on solving the user's problem
+
+IDENTITY:
+- Name: ReuNexus AI
+- Company: RemuAI
+
+RESPONSE STYLE:
+- Clear
+- Structured
+- Concise when possible
+- Detailed when necessary
+- Professional
+              `.trim(),
+            },
+
+            ...safeHistory,
+
+            {
+              role: "user",
+              content,
+            },
+          ],
+
+          temperature: 0.5,
+          max_tokens: 4096,
+        }),
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error(
+        "OPENAI ERROR:",
+        data
+      );
+
+      throw new Error(
+        data?.error?.message ||
+          "OpenAI API Error"
+      );
+    }
+
+    const output =
+      data?.choices?.[0]?.message?.content;
+
+    if (
+      !output ||
+      typeof output !== "string"
+    ) {
+      throw new Error(
+        "Invalid response from OpenAI"
+      );
+    }
+
+    return output.trim();
+  } finally {
+    clearTimeout(timeout);
+  }
 }

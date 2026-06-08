@@ -4,7 +4,12 @@ import { searchTavily } from "./providers/tavily.ts";
 
 import { generateImage } from "./providers/runway.ts";
 import { generateSpeech } from "./providers/elevenlabs.ts";
-
+import {
+  getMemory,
+  saveMemory,
+  saveFeedback,
+  extractLearning
+} from "./ai/memory.ts";
 /* =========================
    🌐 WEB DETECTOR
 ========================= */
