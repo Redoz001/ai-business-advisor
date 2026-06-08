@@ -1,9 +1,37 @@
-<<<<<<< HEAD
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+  "version": 2,
+  "name": "reunexus-ai",
+  "routes": [
+    {
+      "src": "/auth/callback",
+      "dest": "/"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,POST,PUT,DELETE,OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization, apikey, x-client-info"
+        }
+      ]
+    }
   ]
 }
-=======
-r
->>>>>>> 66bcdd993b0721b3eed3ad817603a06ee42f235c
