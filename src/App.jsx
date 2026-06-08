@@ -5,6 +5,8 @@ import { supabase } from "./lib/supabase.js";
 import Auth from "./Auth.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ReubenAI from "./components/ReubenAI.jsx";
+import Settings from "./components/Settings.jsx";
+import profile from "./components/profile.jsx";
 
 /* ===============================
    CALLBACK (FIXED)
