@@ -167,15 +167,15 @@ export default function Sidebar({
   };
 
   return null; // (UI part not included in your snippet)
-}
- /* =========================
+ 
+  /* =========================
    AI AVATAR SYSTEM (MULTI STYLE)
 ========================= */
 const generateAIAvatar = async (style = "adventurer") => {
   if (!user?.id) return;
 
   const seed = `${user.id}-${style}-${Date.now()}`;
-
+  
   const url = `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}`;
 
   const { error } = await supabase
@@ -197,9 +197,9 @@ const generateAIAvatar = async (style = "adventurer") => {
   }));
 };
 
-return (
-  <div
-    className={`h-full bg-black border-r border-zinc-800 flex flex-col ${
+ return (
+   <div
+     className={`h-full bg-black border-r border-zinc-800 flex flex-col ${
       collapsed ? "w-20" : "w-72"
     }`}
   >
@@ -316,7 +316,7 @@ return (
               </button>
 
               <button
-                className="block px-3 py-2 text-sm text-red-400 hover:bg-zinc-900 w-full text-left"
+                className="block px-3 py-2 text-sm text-red-900 hover:bg-zinc-900 w-full text-left"
                 onClick={() => {
                   setChatMenu(null);
                   deleteChat(s.id);
@@ -431,4 +431,4 @@ function MenuItem({ label, onClick, danger }) {
       {label}
     </button>
   );
-}
+}}

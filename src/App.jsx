@@ -145,65 +145,65 @@ export default function App() {
       />
 
           {/* MAIN APP */}
-      <Route
-        path="/"
-        element={
-          user ? (
-            <div className="h-screen flex bg-black text-white overflow-hidden">
-              {/* SIDEBAR */}
-              <div
-                className={`${
-                  sidebarOpen ? "w-64" : "w-0"
-                } transition-all duration-300 overflow-hidden`}
-              >
-                <Sidebar
-                  user={user}
-                  sessions={sessions}
-                  refreshSessions={loadSessions}
-                  activeChat={activeChat}
-                  setActiveChat={setActiveChat}
-                  createNewChat={() => setActiveChat(null)}
-                />
-              </div>
+    <Route
+  path="/"
+  element={
+    user ? (
+      <div className="h-screen flex bg-black text-white overflow-hidden">
+        {/* SIDEBAR */}
+        <div
+          className={`${
+            sidebarOpen ? "w-64" : "w-0"
+          } transition-all duration-300 overflow-hidden flex-shrink-0`}
+        >
+          <Sidebar
+            user={user}
+            sessions={sessions}
+            refreshSessions={loadSessions}
+            activeChat={activeChat}
+            setActiveChat={setActiveChat}
+            createNewChat={() => setActiveChat(null)}
+          />
+        </div>
 
-              {/* MAIN AREA */}
-              <div className="flex-1 flex flex-col">
-                {/* TOP BAR */}
-                <div className="h-14 border-b border-zinc-800 flex items-center px-3">
-                  <button onClick={() => setSidebarOpen((p) => !p)}>
-                    ☰
-                  </button>
-                  <h1 className="ml-3 font-bold">ReuNexus</h1>
-                </div>
+        {/* MAIN AREA */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden ">
+          {/* TOP BAR */}
+          <div className="h-14 border-b border-zinc-800 flex items-center px-3">
+            <button onClick={() => setSidebarOpen((p) => !p)}>
+              ☰
+            </button>
+            <h1 className="ml-3 font-bold">ReuNexus</h1>
+          </div>
 
-                {/* CHAT */}
-                <ReubenAI
-                  user={user}
-                  activeChat={activeChat}
-                  setActiveChat={setActiveChat}
-                />
-              </div>
-            </div>
-          ) : (
-            <Navigate to="/auth" />
-          )
-        }
-      />
+          {/* CHAT */}
+          <ReubenAI
+            user={user}
+            activeChat={activeChat}
+            setActiveChat={setActiveChat}
+          />
+        </div>
+      </div>
+    ) : (
+      <Navigate to="/auth" />
+    )
+  }
+/>
 
-      {/* SETTINGS */}
-      <Route
-        path="/settings"
-        element={
-          user ? (
-            <Settings user={user} />
-          ) : (
-            <Navigate to="/auth" />
-          )
-        }
-      />
+{/* SETTINGS */}
+<Route
+  path="/settings"
+  element={
+    user ? (
+      <Settings user={user} />
+    ) : (
+      <Navigate to="/auth" />
+    )
+  }
+/>
 
-      {/* CATCH ALL (IMPORTANT FOR VERCEL) */}
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
-  );
+{/* CATCH ALL (IMPORTANT FOR VERCEL) */}
+<Route path="*" element={<Navigate to="/" />} />
+</Routes>
+);
 }
