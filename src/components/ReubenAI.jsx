@@ -1,9 +1,17 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "../lib/supabase";
 
 const API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
 
+/* =========================
+   CODE BLOCK (copy button)
+========================= */
 const CodeBlock = ({ children, className }) => {
   const code = String(children);
 
@@ -13,8 +21,6 @@ const CodeBlock = ({ children, className }) => {
 
   return (
     <div className="relative bg-black rounded-lg border border-zinc-800 my-2">
-      
-      {/* COPY BUTTON */}
       <button
         onClick={copyCode}
         className="absolute top-2 right-2 text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded"
@@ -29,6 +35,9 @@ const CodeBlock = ({ children, className }) => {
   );
 };
 
+/* =========================
+   MESSAGE FACTORY
+========================= */
 function createMessage(role, content, extra = {}) {
   return {
     id: crypto.randomUUID(),
@@ -40,7 +49,7 @@ function createMessage(role, content, extra = {}) {
 }
 
 /* =========================
-   STREAM HELPER (typing effect)
+   STREAMING HELPER
 ========================= */
 function streamText(setter, text, speed = 12) {
   let i = 0;
@@ -68,7 +77,6 @@ const WELCOME_MESSAGES = [
   "Ask me to explain anything simply.",
   "I’m here to help you build smarter.",
   "What challenge are we solving today?",
-  "Talk to me like a senior developer would.",
   "I can debug, design, and optimize your ideas.",
   "Let’s create something powerful.",
   "What do you want to understand better?",
@@ -78,24 +86,38 @@ const WELCOME_MESSAGES = [
   "Let’s build something interesting.",
   "Tell me your idea — I’ll shape it.",
   "I can simplify complex topics instantly.",
-  "Ready when you are."
+  "Ready when you are.",
+  "Let’s ship something amazing today."
 ];
 
-export default function ReubenAI({ user, activeChat, setActiveChat }) {
+export default function ReubenAI({
+  user,
+  activeChat,
+  setActiveChat,
+}) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [chatKey, setChatKey] = useState(0); // 🔥 controls welcome reset
 
   const abortRef = useRef(null);
   const bottomRef = useRef(null);
 
   /* AUTO SCROLL */
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [messages]);
 
-  /* LOAD CHAT HISTORY */
+  /* RESET WELCOME ON CHAT SWITCH */
+  useEffect(() => {
+    setMessages([]);
+    setChatKey((p) => p + 1);
+  }, [activeChat]);
+
+  /* LOAD HISTORY */
   useEffect(() => {
     if (!activeChat) return;
 
@@ -109,7 +131,9 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       if (error) return console.error(error);
 
       setMessages(
-        (data || []).map((m) => createMessage(m.role, m.content, { db: true }))
+        (data || []).map((m) =>
+          createMessage(m.role, m.content, { db: true })
+        )
       );
     };
 
@@ -120,7 +144,12 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
   const createChat = async () => {
     const { data, error } = await supabase
       .from("chat_sessions")
-      .insert([{ user_id: user?.id || null, title: "New Chat" }])
+      .insert([
+        {
+          user_id: user?.id || null,
+          title: "New Chat",
+        },
+      ])
       .select()
       .single();
 
@@ -130,7 +159,7 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     return data.id;
   };
 
-  /* SEND MESSAGE (STREAMING) */
+  /* SEND MESSAGE */
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -147,9 +176,21 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       if (!chatId) chatId = await createChat();
 
       const userMsg = createMessage("user", text);
-      const assistantMsg = createMessage("assistant", "");
 
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      const assistantId = crypto.randomUUID();
+
+      const assistantMsg = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        createdAt: Date.now(),
+      };
+
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        assistantMsg,
+      ]);
 
       const session = await supabase.auth.getSession();
       const token = session?.data?.session?.access_token;
@@ -159,7 +200,9 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(token
+            ? { Authorization: `Bearer ${token}` }
+            : {}),
         },
         body: JSON.stringify({
           message: text,
@@ -179,10 +222,15 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       streamText((val) => {
         setMessages((prev) => {
           const copy = [...prev];
-          const idx = copy.findLastIndex((m) => m.role === "assistant");
+          const idx = copy.findIndex(
+            (m) => m.id === assistantId
+          );
 
           if (idx !== -1) {
-            copy[idx] = { ...copy[idx], content: val };
+            copy[idx] = {
+              ...copy[idx],
+              content: val,
+            };
           }
 
           return copy;
@@ -192,17 +240,27 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       /* SAVE */
       setTimeout(async () => {
         await supabase.from("chat_messages").insert([
-          { session_id: chatId, role: "user", content: text },
-          { session_id: chatId, role: "assistant", content: responseText },
+          {
+            session_id: chatId,
+            role: "user",
+            content: text,
+          },
+          {
+            session_id: chatId,
+            role: "assistant",
+            content: responseText,
+          },
         ]);
       }, responseText.length * 12 + 300);
-
     } catch (err) {
       setError(err.message);
 
       setMessages((prev) => [
         ...prev,
-        createMessage("assistant", "⚠️ " + err.message),
+        createMessage(
+          "assistant",
+          "⚠️ " + err.message
+        ),
       ]);
     } finally {
       setLoading(false);
@@ -215,12 +273,14 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     setLoading(false);
   };
 
+  /* WELCOME */
   const welcome = useMemo(() => {
-    const msg =
-      WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
-
-    return msg;
-  }, []);
+    return WELCOME_MESSAGES[
+      Math.floor(
+        Math.random() * WELCOME_MESSAGES.length
+      )
+    ];
+  }, [chatKey]);
 
   const showWelcome = messages.length === 0;
 
@@ -232,7 +292,10 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         <div className="font-bold">Chat</div>
 
         {loading && (
-          <button onClick={stop} className="text-red-400 text-sm">
+          <button
+            onClick={stop}
+            className="text-red-400 text-sm"
+          >
             Stop
           </button>
         )}
@@ -246,10 +309,13 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
           <div className="flex-1 flex items-center justify-center text-center">
             <div className="max-w-md">
               <h2 className="text-xl font-bold mb-3">
-                Hey {user?.email?.split("@")[0] || "there"} 👋
+                Hey {user?.email?.split("@")[0] ||
+                  "there"} 👋
               </h2>
 
-              <p className="text-zinc-400">{welcome}</p>
+              <p className="text-zinc-400">
+                {welcome}
+              </p>
             </div>
           </div>
         )}
@@ -266,22 +332,26 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
               }`}
             >
               <ReactMarkdown
-  components={{
-    code({ node, inline, className, children, ...props }) {
-      return !inline ? (
-        <CodeBlock className={className}>
-          {children}
-        </CodeBlock>
-      ) : (
-        <code className="bg-zinc-800 px-1 rounded text-sm">
-          {children}
-        </code>
-      );
-    },
-  }}
->
-  {m.content}
-</ReactMarkdown>
+                components={{
+                  code({
+                    inline,
+                    className,
+                    children,
+                  }) {
+                    return !inline ? (
+                      <CodeBlock className={className}>
+                        {children}
+                      </CodeBlock>
+                    ) : (
+                      <code className="bg-zinc-800 px-1 rounded text-sm">
+                        {children}
+                      </code>
+                    );
+                  },
+                }}
+              >
+                {m.content}
+              </ReactMarkdown>
             </div>
           ))}
         </div>
@@ -290,15 +360,23 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       </div>
 
       {/* ERROR */}
-      {error && <div className="px-3 text-red-400 text-sm">{error}</div>}
+      {error && (
+        <div className="px-3 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* INPUT */}
       <div className="p-3 border-t border-zinc-800 flex gap-2">
         <input
           className="flex-1 p-2 bg-zinc-900 rounded outline-none"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          onChange={(e) =>
+            setInput(e.target.value)
+          }
+          onKeyDown={(e) =>
+            e.key === "Enter" && sendMessage()
+          }
           placeholder="Ask anything..."
         />
 
