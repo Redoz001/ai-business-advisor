@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "../lib/supabase";
 
@@ -17,20 +17,44 @@ function createMessage(role, content, extra = {}) {
 /* =========================
    STREAM HELPER (typing effect)
 ========================= */
-function streamText(setter, text, speed = 15) {
+function streamText(setter, text, speed = 12) {
   let i = 0;
 
   const interval = setInterval(() => {
     i++;
     setter(text.slice(0, i));
 
-    if (i >= text.length) {
-      clearInterval(interval);
-    }
+    if (i >= text.length) clearInterval(interval);
   }, speed);
 
   return () => clearInterval(interval);
 }
+
+/* =========================
+   20 UNIQUE WELCOME MESSAGES
+========================= */
+const WELCOME_MESSAGES = [
+  "Ask me anything and I’ll break it down step by step.",
+  "What are we building today?",
+  "I can help you code, design, or think faster.",
+  "Drop a problem — I’ll solve it with you.",
+  "Need ideas? I’ve got plenty.",
+  "Let’s turn your thoughts into code.",
+  "Ask me to explain anything simply.",
+  "I’m here to help you build smarter.",
+  "What challenge are we solving today?",
+  "Talk to me like a senior developer would.",
+  "I can debug, design, and optimize your ideas.",
+  "Let’s create something powerful.",
+  "What do you want to understand better?",
+  "Ask me anything technical or creative.",
+  "I’ll guide you step by step.",
+  "No limits — just ask.",
+  "Let’s build something interesting.",
+  "Tell me your idea — I’ll shape it.",
+  "I can simplify complex topics instantly.",
+  "Ready when you are."
+];
 
 export default function ReubenAI({ user, activeChat, setActiveChat }) {
   const [messages, setMessages] = useState([]);
@@ -81,7 +105,7 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     return data.id;
   };
 
-  /* SEND MESSAGE (STREAMING VERSION) */
+  /* SEND MESSAGE (STREAMING) */
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -98,8 +122,6 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       if (!chatId) chatId = await createChat();
 
       const userMsg = createMessage("user", text);
-
-      // assistant placeholder (EMPTY for streaming)
       const assistantMsg = createMessage("assistant", "");
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -128,32 +150,29 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
 
       const responseText = data?.payload || "";
 
-      /* STREAM INTO UI (ChatGPT style typing) */
-      let liveText = "";
-
+      /* STREAM RESPONSE */
       streamText((val) => {
         setMessages((prev) => {
           const copy = [...prev];
           const idx = copy.findLastIndex((m) => m.role === "assistant");
+
           if (idx !== -1) {
-            copy[idx] = {
-              ...copy[idx],
-              content: val,
-            };
+            copy[idx] = { ...copy[idx], content: val };
           }
+
           return copy;
         });
       }, responseText);
 
-      /* SAVE AFTER STREAM COMPLETE */
+      /* SAVE */
       setTimeout(async () => {
         await supabase.from("chat_messages").insert([
           { session_id: chatId, role: "user", content: text },
           { session_id: chatId, role: "assistant", content: responseText },
         ]);
-      }, responseText.length * 15 + 300);
+      }, responseText.length * 12 + 300);
+
     } catch (err) {
-      console.error(err);
       setError(err.message);
 
       setMessages((prev) => [
@@ -171,10 +190,19 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     setLoading(false);
   };
 
+  const welcome = useMemo(() => {
+    const msg =
+      WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
+
+    return msg;
+  }, []);
+
+  const showWelcome = messages.length === 0;
+
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-white">
 
-      {/* HEADER (cleaned branding) */}
+      {/* HEADER */}
       <div className="p-3 border-b border-zinc-800 flex justify-between">
         <div className="font-bold">Chat</div>
 
@@ -185,20 +213,37 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         )}
       </div>
 
-      {/* CHAT */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`p-3 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-              m.role === "user"
-                ? "bg-green-400 text-black ml-auto"
-                : "bg-zinc-900"
-            }`}
-          >
-            <ReactMarkdown>{m.content}</ReactMarkdown>
+      {/* CHAT AREA */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end">
+
+        {/* WELCOME SCREEN */}
+        {showWelcome && (
+          <div className="flex-1 flex items-center justify-center text-center">
+            <div className="max-w-md">
+              <h2 className="text-xl font-bold mb-3">
+                Hey {user?.email?.split("@")[0] || "there"} 👋
+              </h2>
+
+              <p className="text-zinc-400">{welcome}</p>
+            </div>
           </div>
-        ))}
+        )}
+
+        {/* MESSAGES */}
+        <div className="space-y-3">
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={`p-3 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                m.role === "user"
+                  ? "bg-green-400 text-black ml-auto"
+                  : "bg-zinc-900"
+              }`}
+            >
+              <ReactMarkdown>{m.content}</ReactMarkdown>
+            </div>
+          ))}
+        </div>
 
         <div ref={bottomRef} />
       </div>
