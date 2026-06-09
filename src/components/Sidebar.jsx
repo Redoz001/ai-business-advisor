@@ -166,7 +166,7 @@ export default function Sidebar({
     setActiveChat?.(data.id);
   };
 
-  return null; // (UI part not included in your snippet)
+  
  
   /* =========================
    AI AVATAR SYSTEM (MULTI STYLE)
@@ -200,7 +200,7 @@ const generateAIAvatar = async (style = "adventurer") => {
  return (
    <div
      className={`h-full bg-black border-r border-zinc-800 flex flex-col ${
-      collapsed ? "w-20" : "w-72"
+      collapsed ? "w-20" : "w-85"
     }`}
   >
     {/* HEADER */}
@@ -316,7 +316,7 @@ const generateAIAvatar = async (style = "adventurer") => {
               </button>
 
               <button
-                className="block px-3 py-2 text-sm text-red-900 hover:bg-zinc-900 w-full text-left"
+                className="block px-3 py-2 text-sm text-red-400 hover:bg-zinc-900 w-full text-left"
                 onClick={() => {
                   setChatMenu(null);
                   deleteChat(s.id);

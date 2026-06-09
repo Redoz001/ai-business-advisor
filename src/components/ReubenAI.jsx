@@ -141,83 +141,107 @@ export default function ReubenAI({
   }, [activeChat]);
 
   /* CREATE CHAT */
-  const createChat = async () => {
-    const { data, error } = await supabase
-      .from("chat_sessions")
-      .insert([
-        {
-          user_id: user?.id || null,
-          title: "New Chat",
-        },
-      ])
-      .select()
-      .single();
+const createChat = async () => {
+  const { data, error } = await supabase
+    .from("chat_sessions")
+    .insert([
+      {
+        user_id: user?.id || null,
+        title: "New Chat",
+      },
+    ])
+    .select()
+    .single();
 
-    if (error) throw error;
+  if (error) throw error;
 
-    setActiveChat?.(data.id);
-    return data.id;
-  };
+  setActiveChat?.(data.id);
+  return data.id;
+};
 
-  /* SEND MESSAGE */
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
+/* TITLE GENERATOR */
+const generateTitle = async (message) => {
+  const res = await fetch("/api/generate-title", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
 
-    const text = input;
-    setInput("");
-    setError(null);
-    setLoading(true);
+  const data = await res.json();
+  return data.title;
+};
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+/* SEND MESSAGE */
+const sendMessage = async () => {
+  if (!input.trim() || loading) return;
 
-    try {
-      let chatId = activeChat;
-      if (!chatId) chatId = await createChat();
+  const text = input;
+  setInput("");
+  setError(null);
+  setLoading(true);
 
-      const userMsg = createMessage("user", text);
+  const controller = new AbortController();
+  abortRef.current = controller;
 
-      const assistantId = crypto.randomUUID();
+  try {
+    let chatId = activeChat;
 
-      const assistantMsg = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        createdAt: Date.now(),
-      };
+    const isNewChat = !chatId;
 
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        assistantMsg,
-      ]);
+    if (!chatId) chatId = await createChat();
 
-      const session = await supabase.auth.getSession();
-      const token = session?.data?.session?.access_token;
+    const userMsg = createMessage("user", text);
 
-      const res = await fetch(API_URL, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token
-            ? { Authorization: `Bearer ${token}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          message: text,
-          chatId,
-          userId: user?.id || "anon",
-        }),
-      });
+    const assistantId = crypto.randomUUID();
 
-      if (!res.ok) throw new Error(await res.text());
+    const assistantMsg = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      createdAt: Date.now(),
+    };
 
-      const raw = await res.text();
-      const data = raw ? JSON.parse(raw) : null;
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      assistantMsg,
+    ]);
 
-      const responseText = data?.payload || "";
+    /* ✅ AUTO TITLE GENERATION (ONLY FIRST MESSAGE) */
+    if (isNewChat) {
+      const title = await generateTitle(text);
 
+      await supabase
+        .from("chat_sessions")
+        .update({ title })
+        .eq("id", chatId);
+    }
+
+    const session = await supabase.auth.getSession();
+    const token = session?.data?.session?.access_token;
+
+    const res = await fetch(API_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token
+          ? { Authorization: `Bearer ${token}` }
+          : {}),
+      },
+      body: JSON.stringify({
+        message: text,
+        chatId,
+        userId: user?.id || "anon",
+      }),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+
+    const raw = await res.text();
+    const data = raw ? JSON.parse(raw) : null;
+
+    const responseText = data?.payload || "";
       /* STREAM RESPONSE */
       streamText((val) => {
         setMessages((prev) => {
