@@ -144,7 +144,7 @@ export default function App() {
         element={user ? <Navigate to="/" /> : <Auth />}
       />
 
-      {/* MAIN APP */}
+          {/* MAIN APP */}
       <Route
         path="/"
         element={
@@ -184,6 +184,18 @@ export default function App() {
                 />
               </div>
             </div>
+          ) : (
+            <Navigate to="/auth" />
+          )
+        }
+      />
+
+      {/* SETTINGS */}
+      <Route
+        path="/settings"
+        element={
+          user ? (
+            <Settings user={user} />
           ) : (
             <Navigate to="/auth" />
           )
