@@ -178,9 +178,9 @@ export default function Sidebar({
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-md overflow-hidden flex items-center justify-center bg-zinc-900">
               <img
-                src="/logo.png"
-                alt="ReuNexus Logo"
-                className="w-full h-full object-cover"
+               src={RN_LOGO}
+               alt="ReuNexus Logo"
+               className="w-full h-full object-contain"
               />
             </div>
 
