@@ -4,6 +4,31 @@ import { supabase } from "../lib/supabase";
 
 const API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
 
+const CodeBlock = ({ children, className }) => {
+  const code = String(children);
+
+  const copyCode = async () => {
+    await navigator.clipboard.writeText(code);
+  };
+
+  return (
+    <div className="relative bg-black rounded-lg border border-zinc-800 my-2">
+      
+      {/* COPY BUTTON */}
+      <button
+        onClick={copyCode}
+        className="absolute top-2 right-2 text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded"
+      >
+        Copy
+      </button>
+
+      <pre className="p-3 overflow-x-auto text-sm">
+        <code className={className}>{code}</code>
+      </pre>
+    </div>
+  );
+};
+
 function createMessage(role, content, extra = {}) {
   return {
     id: crypto.randomUUID(),
@@ -240,7 +265,23 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
                   : "bg-zinc-900"
               }`}
             >
-              <ReactMarkdown>{m.content}</ReactMarkdown>
+              <ReactMarkdown
+  components={{
+    code({ node, inline, className, children, ...props }) {
+      return !inline ? (
+        <CodeBlock className={className}>
+          {children}
+        </CodeBlock>
+      ) : (
+        <code className="bg-zinc-800 px-1 rounded text-sm">
+          {children}
+        </code>
+      );
+    },
+  }}
+>
+  {m.content}
+</ReactMarkdown>
             </div>
           ))}
         </div>
