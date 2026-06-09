@@ -21,9 +21,64 @@ export default function Sidebar({
   const [accountOpen, setAccountOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [chatMenu, setChatMenu] = useState(null);
+  const [editingChat, setEditingChat] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
 
   const navigate = useNavigate();
+  const deleteChat = async (sessionId) => {
+  const confirmed = window.confirm(
+    "Delete this conversation permanently?"
+  );
 
+  if (!confirmed) return;
+
+  await supabase
+    .from("messages")
+    .delete()
+    .eq("session_id", sessionId);
+
+  const { error } = await supabase
+    .from("chat_sessions")
+    .delete()
+    .eq("id", sessionId);
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  if (refreshSessions) {
+    await refreshSessions();
+  }
+
+  if (activeChat === sessionId) {
+    setActiveChat(null);
+  }
+};
+  const renameChat = async (sessionId) => {
+  const title = editTitle.trim();
+
+  if (!title) return;
+
+  const { error } = await supabase
+    .from("chat_sessions")
+    .update({
+      title,
+    })
+    .eq("id", sessionId);
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setEditingChat(null);
+
+  if (refreshSessions) {
+    await refreshSessions();
+  }
+};
   /* =========================
      LOAD PROFILE (FIXED SAFE ERROR HANDLING)
   ========================= */
@@ -197,18 +252,79 @@ export default function Sidebar({
       {/* CHAT LIST */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {filtered.map((s) => (
-          <div
-            key={s.id}
-            className={`p-2 text-sm rounded cursor-pointer ${
-              activeChat === s.id
-                ? "bg-zinc-800 text-white"
-                : "text-zinc-400 hover:bg-zinc-900"
-            }`}
-            onClick={() => setActiveChat(String(s.id))}
+  <div
+    key={s.id}
+    className={`group relative p-2 rounded ${
+      activeChat === s.id
+        ? "bg-zinc-800 text-white"
+        : "text-zinc-400 hover:bg-zinc-900"
+    }`}
+  >
+    {editingChat === s.id ? (
+      <input
+        autoFocus
+        value={editTitle}
+        onChange={(e) =>
+          setEditTitle(e.target.value)
+        }
+        onBlur={() => renameChat(s.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            renameChat(s.id);
+          }
+        }}
+        className="w-full bg-zinc-900 p-1 rounded text-white"
+      />
+    ) : (
+      <div
+        className="cursor-pointer pr-8"
+        onClick={() =>
+          setActiveChat(String(s.id))
+        }
+      >
+        {s.title || "New Chat"}
+      </div>
+    )}
+
+    {!collapsed && (
+      <button
+        onClick={() =>
+          setChatMenu(
+            chatMenu === s.id ? null : s.id
+          )
+        }
+        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100"
+      >
+        ⋮
+      </button>
+    )}
+
+      {chatMenu === s.id && (
+       <div className="absolute right-2 top-8 bg-zinc-950 border border-zinc-800 rounded-lg z-50">
+        <button
+           className="block px-3 py-2 text-sm hover:bg-zinc-900 w-full text-left"
+            onClick={() => {
+              setEditingChat(s.id);
+              setEditTitle(s.title || "");
+              setChatMenu(null);
+            }}
           >
-            {!collapsed && s.title}
-          </div>
-        ))}
+             ✏ Rename
+            </button>
+
+            <button
+                className="block px-3 py-2 text-sm text-red-400 hover:bg-zinc-900 w-full text-left"
+                onClick={() => {
+                setChatMenu(null);
+                deleteChat(s.id);
+              }}
+             >
+               🗑 Delete
+             </button>
+            </div>
+          )}
+        </div>
+       ))}
       </div>
 
       {/* FOOTER */}
