@@ -26,59 +26,62 @@ export default function Sidebar({
   const [editTitle, setEditTitle] = useState("");
 
   const navigate = useNavigate();
+
   const deleteChat = async (sessionId) => {
-  const confirmed = window.confirm(
-    "Delete this conversation permanently?"
-  );
+    const confirmed = window.confirm(
+      "Delete this conversation permanently?"
+    );
 
-  if (!confirmed) return;
+    if (!confirmed) return;
 
-  await supabase
-    .from("messages")
-    .delete()
-    .eq("session_id", sessionId);
+    await supabase
+      .from("messages")
+      .delete()
+      .eq("session_id", sessionId);
 
-  const { error } = await supabase
-    .from("chat_sessions")
-    .delete()
-    .eq("id", sessionId);
+    const { error } = await supabase
+      .from("chat_sessions")
+      .delete()
+      .eq("id", sessionId);
 
-  if (error) {
-    console.error(error);
-    return;
-  }
+    if (error) {
+      console.error(error);
+      return;
+    }
 
-  if (refreshSessions) {
-    await refreshSessions();
-  }
+    if (refreshSessions) {
+      await refreshSessions();
+    }
 
-  if (activeChat === sessionId) {
-    setActiveChat(null);
-  }
-};
+    if (activeChat === sessionId) {
+      setActiveChat(null);
+    }
+  };
+
   const renameChat = async (sessionId) => {
-  const title = editTitle.trim();
+    const title = editTitle.trim();
 
-  if (!title) return;
+    if (!title) return;
 
-  const { error } = await supabase
-    .from("chat_sessions")
-    .update({
-      title,
-    })
-    .eq("id", sessionId);
+    const { error } = await supabase
+      .from("chat_sessions")
+      .update({
+        title,
+      })
+      .eq("id", sessionId);
 
-  if (error) {
-    console.error(error);
-    return;
-  }
+    if (error) {
+      console.error(error);
+      return;
+    }
 
-  setEditingChat(null);
+    setEditingChat(null);
 
-  if (refreshSessions) {
-    await refreshSessions();
-  }
-};
+    if (refreshSessions) {
+      await refreshSessions();
+    }
+  };
+
   /* =========================
      LOAD PROFILE (FIXED SAFE ERROR HANDLING)
   ========================= */
@@ -163,270 +166,256 @@ export default function Sidebar({
     setActiveChat?.(data.id);
   };
 
-  /* =========================
-     AI AVATAR SYSTEM (MULTI STYLE)
-  ========================= */
-  const generateAIAvatar = async (style = "adventurer") => {
-    if (!user?.id) return;
+  return null; // (UI part not included in your snippet)
+}
+ /* =========================
+   AI AVATAR SYSTEM (MULTI STYLE)
+========================= */
+const generateAIAvatar = async (style = "adventurer") => {
+  if (!user?.id) return;
 
-    const seed = `${user.id}-${style}-${Date.now()}`;
+  const seed = `${user.id}-${style}-${Date.now()}`;
 
-    const url = `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}`;
+  const url = `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}`;
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        avatar_url: url,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", user.id);
-
-    if (error) {
-      console.error("Avatar update failed:", error);
-      return;
-    }
-
-    setProfile((prev) => ({
-      ...prev,
+  const { error } = await supabase
+    .from("profiles")
+    .update({
       avatar_url: url,
-    }));
-  };
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", user.id);
 
-  return (
-    <div
-      className={`h-full bg-black border-r border-zinc-800 flex flex-col ${
-        collapsed ? "w-20" : "w-72"
-      }`}
-    >
-      {/* HEADER */}
-      <div className="p-4 flex items-center justify-between border-b border-zinc-800">
-        {!collapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex items-center justify-center">
-             <img
-               src={RN_Logo}
-               alt="ReuNexus Logo"
-               className="w-full h-full object-contain"
-            />
-            </div>
+  if (error) {
+    console.error("Avatar update failed:", error);
+    return;
+  }
 
-            <div>
-              <h1 className="text-white font-bold">ReuNexus</h1>
-              <p className="text-xs text-zinc-500">
-                {workspace?.name || "Workspace"}
-              </p>
-            </div>
-          </div>
-        )}
+  setProfile((prev) => ({
+    ...prev,
+    avatar_url: url,
+  }));
+};
 
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="text-zinc-400"
-        >
-          {collapsed ? "➜" : "⬅"}
-        </button>
-      </div>
-
-      {/* SEARCH */}
+return (
+  <div
+    className={`h-full bg-black border-r border-zinc-800 flex flex-col ${
+      collapsed ? "w-20" : "w-72"
+    }`}
+  >
+    {/* HEADER */}
+    <div className="p-4 flex items-center justify-between border-b border-zinc-800">
       {!collapsed && (
-        <div className="p-3">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search chats..."
-            className="w-full bg-zinc-900 text-white p-2 rounded-lg text-sm"
-          />
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-md overflow-hidden bg-zinc-900 flex items-center justify-center">
+            <img
+              src={RN_Logo}
+              alt="ReuNexus Logo"
+              className="w-full h-full object-contain"
+            />
+          </div>
+
+          <div>
+            <h1 className="text-white font-bold">ReuNexus</h1>
+            <p className="text-xs text-zinc-500">
+              {workspace?.name || "Workspace"}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* NEW CHAT */}
-      <div className="px-3 mb-2">
-        <button
-          onClick={handleNewChat}
-          className="w-full bg-emerald-400 text-black py-2 rounded-lg text-sm font-bold"
-        >
-          + {!collapsed && "New Chat"}
-        </button>
-      </div>
-
-      {/* CHAT LIST */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {filtered.map((s) => (
-  <div
-    key={s.id}
-    className={`group relative p-2 rounded ${
-      activeChat === s.id
-        ? "bg-zinc-800 text-white"
-        : "text-zinc-400 hover:bg-zinc-900"
-    }`}
-  >
-    {editingChat === s.id ? (
-      <input
-        autoFocus
-        value={editTitle}
-        onChange={(e) =>
-          setEditTitle(e.target.value)
-        }
-        onBlur={() => renameChat(s.id)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            renameChat(s.id);
-          }
-        }}
-        className="w-full bg-zinc-900 p-1 rounded text-white"
-      />
-    ) : (
-      <div
-        className="cursor-pointer pr-8"
-        onClick={() =>
-          setActiveChat(String(s.id))
-        }
-      >
-        {s.title || "New Chat"}
-      </div>
-    )}
-
-    {!collapsed && (
       <button
-        onClick={() =>
-          setChatMenu(
-            chatMenu === s.id ? null : s.id
-          )
-        }
-        className="absolute right-2 top-2 opacity-0 group-hover:opacity-100"
+        onClick={() => setCollapsed(!collapsed)}
+        className="text-zinc-400"
       >
-        ⋮
+        {collapsed ? "➜" : "⬅"}
       </button>
+    </div>
+
+    {/* SEARCH */}
+    {!collapsed && (
+      <div className="p-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search chats..."
+          className="w-full bg-zinc-900 text-white p-2 rounded-lg text-sm"
+        />
+      </div>
     )}
 
-      {chatMenu === s.id && (
-       <div className="absolute right-2 top-8 bg-zinc-950 border border-zinc-800 rounded-lg z-50">
-        <button
-           className="block px-3 py-2 text-sm hover:bg-zinc-900 w-full text-left"
-            onClick={() => {
-              setEditingChat(s.id);
-              setEditTitle(s.title || "");
-              setChatMenu(null);
-            }}
-          >
-             ✏ Rename
-            </button>
+    {/* NEW CHAT */}
+    <div className="px-3 mb-2">
+      <button
+        onClick={handleNewChat}
+        className="w-full bg-emerald-400 text-black py-2 rounded-lg text-sm font-bold"
+      >
+        + {!collapsed && "New Chat"}
+      </button>
+    </div>
 
+    {/* CHAT LIST */}
+    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      {filtered.map((s) => (
+        <div
+          key={s.id}
+          className={`group relative p-2 rounded ${
+            String(activeChat) === String(s.id)
+              ? "bg-zinc-800 text-white"
+              : "text-zinc-400 hover:bg-zinc-900"
+          }`}
+        >
+          {editingChat === s.id ? (
+            <input
+              autoFocus
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onBlur={() => renameChat(s.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  renameChat(s.id);
+                }
+
+                if (e.key === "Escape") {
+                  setEditingChat(null);
+                }
+              }}
+              className="w-full bg-zinc-900 p-1 rounded text-white"
+            />
+          ) : (
+            <div
+              className="cursor-pointer pr-10 truncate"
+              onClick={() => setActiveChat(String(s.id))}
+            >
+              {s.title || "New Chat"}
+            </div>
+          )}
+
+          {!collapsed && (
             <button
+              onClick={() =>
+                setChatMenu(chatMenu === s.id ? null : s.id)
+              }
+              className="absolute right-2 top-2 opacity-100 text-zinc-400 hover:text-white"
+            >
+              ⋮
+            </button>
+          )}
+
+          {chatMenu === s.id && (
+            <div className="absolute right-2 top-8 bg-zinc-950 border border-zinc-800 rounded-lg z-[9999] min-w-[140px] shadow-xl">
+              <button
+                className="block px-3 py-2 text-sm hover:bg-zinc-900 w-full text-left"
+                onClick={() => {
+                  setEditingChat(s.id);
+                  setEditTitle(s.title || "");
+                  setChatMenu(null);
+                }}
+              >
+                ✏ Rename
+              </button>
+
+              <button
                 className="block px-3 py-2 text-sm text-red-400 hover:bg-zinc-900 w-full text-left"
                 onClick={() => {
-                setChatMenu(null);
-                deleteChat(s.id);
-              }}
-             >
-               🗑 Delete
-             </button>
+                  setChatMenu(null);
+                  deleteChat(s.id);
+                }}
+              >
+                🗑 Delete
+              </button>
             </div>
           )}
         </div>
-       ))}
-      </div>
+      ))}
+    </div>
 
-      {/* FOOTER */}
-      <div className="border-t border-zinc-800 p-3 relative">
-        <button
-          onClick={() => setAccountOpen(!accountOpen)}
-          className="flex items-center gap-2 w-full p-2 hover:bg-zinc-900 rounded-lg"
-        >
-          <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center">
-            {profile?.avatar_url ? (
-              <img
-                src={profile.avatar_url}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <span className="text-xs font-bold text-black bg-emerald-400 w-full h-full flex items-center justify-center">
-                {initials}
-              </span>
-            )}
-          </div>
-
-          {!collapsed && (
-            <span className="text-white text-sm">
-              {profile?.display_name ||
-                user?.email?.split("@")[0]}
+    {/* FOOTER */}
+    <div className="border-t border-zinc-800 p-3 relative">
+      <button
+        onClick={() => setAccountOpen(!accountOpen)}
+        className="flex items-center gap-2 w-full p-2 hover:bg-zinc-900 rounded-lg"
+      >
+        <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center">
+          {profile?.avatar_url ? (
+            <img
+              src={profile.avatar_url}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="text-xs font-bold text-black bg-emerald-400 w-full h-full flex items-center justify-center">
+              {initials}
             </span>
           )}
-        </button>
+        </div>
 
-        {/* ACCOUNT MENU */}
-        <AnimatePresence>
-          {accountOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="absolute bottom-16 left-2 right-2 bg-zinc-950 border border-zinc-800 rounded-xl z-[1000]"
-            >
-              <MenuItem
-                label="Profile"
-                onClick={() => setProfileOpen(true)}
-              />
-              <MenuItem
-                label="Settings"
-                onClick={() => navigate("/settings")}
-              />
+        {!collapsed && (
+          <span className="text-white text-sm">
+            {profile?.display_name || user?.email?.split("@")[0]}
+          </span>
+        )}
+      </button>
 
-              {/* AVATAR MODES */}
-              <MenuItem
-                label="Realistic Avatar"
-                onClick={() =>
-                  generateAIAvatar("lorelei")
-                }
-              />
-              <MenuItem
-                label="Anime Avatar"
-                onClick={() =>
-                  generateAIAvatar("micah")
-                }
-              />
-              <MenuItem
-                label="Robot Avatar"
-                onClick={() =>
-                  generateAIAvatar("bottts")
-                }
-              />
-
-              <MenuItem
-                label="Logout"
-                danger
-                onClick={logout}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* PROFILE MODAL */}
+      {/* ACCOUNT MENU */}
       <AnimatePresence>
-        {profileOpen && (
+        {accountOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]"
-            onClick={(e) => {
-              if (e.target === e.currentTarget)
-                setProfileOpen(false);
-            }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute bottom-16 left-2 right-2 bg-zinc-950 border border-zinc-800 rounded-xl z-[1000]"
           >
-            <div className="bg-zinc-950 border border-zinc-800 rounded-xl w-[500px] p-4 text-white">
-              <h2 className="text-xl font-bold mb-4">
-                Profile
-              </h2>
-              <Profile user={user} />
-            </div>
+            <MenuItem
+              label="Profile"
+              onClick={() => setProfileOpen(true)}
+            />
+            <MenuItem
+              label="Settings"
+              onClick={() => navigate("/settings")}
+            />
+
+            {/* AVATAR MODES */}
+            <MenuItem
+              label="Realistic Avatar"
+              onClick={() => generateAIAvatar("lorelei")}
+            />
+            <MenuItem
+              label="Anime Avatar"
+              onClick={() => generateAIAvatar("micah")}
+            />
+            <MenuItem
+              label="Robot Avatar"
+              onClick={() => generateAIAvatar("bottts")}
+            />
+
+            <MenuItem label="Logout" danger onClick={logout} />
           </motion.div>
         )}
       </AnimatePresence>
     </div>
-  );
-}
+
+    {/* PROFILE MODAL */}
+    <AnimatePresence>
+      {profileOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget)
+              setProfileOpen(false);
+          }}
+        >
+          <div className="bg-zinc-950 border border-zinc-800 rounded-xl w-[500px] p-4 text-white">
+            <h2 className="text-xl font-bold mb-4">Profile</h2>
+            <Profile user={user} />
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
+);
 
 /* =========================
    MENU ITEM
