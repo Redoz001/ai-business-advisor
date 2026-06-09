@@ -1,144 +1,253 @@
-﻿import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { routeRequest } from "./reuben_engine.ts";
+﻿import React, { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import { supabase } from "../lib/supabase";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
 
-/* =========================
-   🧠 INTENT DETECTION (IMPROVED)
-========================= */
-function detectIntent(message: string) {
-  const m = message.toLowerCase();
-
-  const image =
-    /\b(generate|create|make|draw|render).*(image|picture|photo|art)\b/.test(m);
-
-  const voice =
-    /\b(speak|voice|audio|read|tts)\b/.test(m);
-
-  const web =
-    /\b(today|latest|news|current|who is|price|what is)\b/.test(m);
-
-  return { image, voice, web };
+/* -----------------------------
+   MESSAGE FACTORY
+----------------------------- */
+function createMessage(role, content, extra = {}) {
+  return {
+    id: crypto.randomUUID(),
+    role,
+    content,
+    createdAt: Date.now(),
+    ...extra,
+  };
 }
 
-/* =========================
-   🧹 SAFE PARSER
-========================= */
-function safeJSON(raw: string) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+/* -----------------------------
+   STREAMING HELPER (ChatGPT STYLE)
+----------------------------- */
+function useTypewriter(setMessages, assistantIdRef) {
+  const intervalRef = useRef(null);
+
+  const streamText = (fullText) => {
+    let i = 0;
+
+    clearInterval(intervalRef.current);
+
+    intervalRef.current = setInterval(() => {
+      i += Math.max(1, Math.floor(fullText.length / 120)); // smooth speed
+
+      const chunk = fullText.slice(0, i);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantIdRef.current
+            ? { ...m, content: chunk }
+            : m
+        )
+      );
+
+      if (i >= fullText.length) {
+        clearInterval(intervalRef.current);
+      }
+    }, 15);
+  };
+
+  return streamText;
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
+export default function ReubenAI({ user, activeChat, setActiveChat }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  try {
-    const raw = await req.text();
+  const abortRef = useRef(null);
+  const assistantIdRef = useRef(null);
 
-    if (!raw) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Empty request body" }),
-        { status: 400, headers: corsHeaders }
+  const streamText = useTypewriter(setMessages, assistantIdRef);
+
+  /* -----------------------------
+     LOAD CHAT HISTORY
+  ----------------------------- */
+  useEffect(() => {
+    if (!activeChat) return;
+
+    const load = async () => {
+      const { data } = await supabase
+        .from("chat_messages")
+        .select("*")
+        .eq("session_id", activeChat)
+        .order("created_at", { ascending: true });
+
+      setMessages(
+        (data || []).map((m) =>
+          createMessage(m.role, m.content)
+        )
       );
-    }
+    };
 
-    const body = safeJSON(raw);
+    load();
+  }, [activeChat]);
 
-    if (!body) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Invalid JSON body" }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
+  /* -----------------------------
+     CREATE CHAT SESSION
+  ----------------------------- */
+  const createChat = async () => {
+    const { data, error } = await supabase
+      .from("chat_sessions")
+      .insert([
+        {
+          user_id: user?.id || null,
+          title: "New Chat",
+        },
+      ])
+      .select()
+      .single();
 
-    let { message, context } = body;
+    if (error) throw error;
 
-    if (!message || typeof message !== "string") {
-      return new Response(
-        JSON.stringify({ success: false, error: "message is required" }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
+    setActiveChat?.(data.id);
+    return data.id;
+  };
 
-    // =========================
-    // 🧹 NORMALIZATION LAYER
-    // =========================
-    message = message.trim().slice(0, 4000);
+  /* -----------------------------
+     SEND MESSAGE (STREAM FIXED)
+  ----------------------------- */
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
 
-    context = context || { sessionHistory: [] };
+    const text = input;
+    setInput("");
+    setError(null);
+    setLoading(true);
 
-    const { image } = detectIntent(message);
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    // =========================
-    // 🚀 IMAGE FAST PATH (ASYNC)
-    // =========================
-    if (image) {
-      // DO NOT await — allow background processing
-      routeRequest(message, context).catch((err) => {
-        console.error("Image pipeline failed:", err);
+    try {
+      let chatId = activeChat;
+      if (!chatId) chatId = await createChat();
+
+      const userMsg = createMessage("user", text);
+
+      const assistantId = crypto.randomUUID();
+      assistantIdRef.current = assistantId;
+
+      const assistantMsg = createMessage("assistant", "", {
+        id: assistantId,
       });
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          type: "image",
-          payload: "processing",
-          mode: "runway-async",
-        }),
-        {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
-    // =========================
-    // 🚀 MAIN PIPELINE
-    // =========================
-    const result = await routeRequest(message, context);
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token;
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        type: result.type || "text",
-        payload: result.payload ?? "",
-        webUsed: result.webUsed ?? false,
-        mode: result.mode ?? "llm",
-        mediaType: result.type || "text",
-      }),
-      {
-        status: 200,
+      const res = await fetch(API_URL, {
+        method: "POST",
+        signal: controller.signal,
         headers: {
-          ...corsHeaders,
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-      }
-    );
-  } catch (err: any) {
-    console.error("Edge Function Error:", err);
+        body: JSON.stringify({
+          message: text,
+          chatId,
+          userId: user?.id || "anon",
+        }),
+      });
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: err?.message || "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: corsHeaders,
-      }
-    );
-  }
-});
+      if (!res.ok) throw new Error(await res.text());
+
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : null;
+
+      const responseText = data?.payload || "";
+
+      // ✅ STREAM IT (ChatGPT STYLE)
+      streamText(responseText);
+
+      await supabase.from("chat_messages").insert([
+        {
+          session_id: chatId,
+          role: "user",
+          content: text,
+        },
+        {
+          session_id: chatId,
+          role: "assistant",
+          content: responseText,
+        },
+      ]);
+    } catch (err) {
+      setError(err.message);
+      setMessages((prev) => [
+        ...prev,
+        createMessage("assistant", "⚠️ " + err.message),
+      ]);
+    } finally {
+      setLoading(false);
+      abortRef.current = null;
+    }
+  };
+
+  /* -----------------------------
+     STOP GENERATION
+----------------------------- */
+  const stop = () => {
+    abortRef.current?.abort();
+    setLoading(false);
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-zinc-950 text-white">
+
+      {/* CHAT AREA */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((m) => (
+          <div
+            key={m.id}
+            className={`p-3 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+              m.role === "user"
+                ? "bg-green-400 text-black ml-auto"
+                : "bg-zinc-900"
+            }`}
+          >
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <p className="mb-2">{children}</p>,
+                ol: ({ children }) => (
+                  <ol className="list-decimal ml-5 space-y-1">{children}</ol>
+                ),
+                ul: ({ children }) => (
+                  <ul className="list-disc ml-5 space-y-1">{children}</ul>
+                ),
+              }}
+            >
+              {m.content}
+            </ReactMarkdown>
+          </div>
+        ))}
+      </div>
+
+      {/* ERROR */}
+      {error && (
+        <div className="px-3 text-red-400 text-sm">{error}</div>
+      )}
+
+      {/* INPUT */}
+      <div className="p-3 border-t border-zinc-800 flex gap-2">
+        <input
+          className="flex-1 p-2 bg-zinc-900 rounded outline-none"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") sendMessage();
+          }}
+          placeholder="Ask..."
+        />
+
+        <button
+          onClick={sendMessage}
+          className="px-4 py-2 bg-zinc-800 rounded"
+        >
+          {loading ? "Stop" : "Send"}
+        </button>
+      </div>
+    </div>
+  );
+}

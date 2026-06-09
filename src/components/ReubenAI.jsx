@@ -4,9 +4,6 @@ import { supabase } from "../lib/supabase";
 
 const API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
 
-/* -----------------------------
-   MESSAGE FACTORY
------------------------------ */
 function createMessage(role, content, extra = {}) {
   return {
     id: crypto.randomUUID(),
@@ -17,6 +14,24 @@ function createMessage(role, content, extra = {}) {
   };
 }
 
+/* =========================
+   STREAM HELPER (typing effect)
+========================= */
+function streamText(setter, text, speed = 15) {
+  let i = 0;
+
+  const interval = setInterval(() => {
+    i++;
+    setter(text.slice(0, i));
+
+    if (i >= text.length) {
+      clearInterval(interval);
+    }
+  }, speed);
+
+  return () => clearInterval(interval);
+}
+
 export default function ReubenAI({ user, activeChat, setActiveChat }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -24,10 +39,14 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
   const [error, setError] = useState(null);
 
   const abortRef = useRef(null);
+  const bottomRef = useRef(null);
 
-  /* -----------------------------
-     LOAD CHAT HISTORY
-  ----------------------------- */
+  /* AUTO SCROLL */
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  /* LOAD CHAT HISTORY */
   useEffect(() => {
     if (!activeChat) return;
 
@@ -38,33 +57,21 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
         .eq("session_id", activeChat)
         .order("created_at", { ascending: true });
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+      if (error) return console.error(error);
 
       setMessages(
-        (data || []).map((m) =>
-          createMessage(m.role, m.content, { db: true })
-        )
+        (data || []).map((m) => createMessage(m.role, m.content, { db: true }))
       );
     };
 
     load();
   }, [activeChat]);
 
-  /* -----------------------------
-     CREATE CHAT SESSION
-  ----------------------------- */
+  /* CREATE CHAT */
   const createChat = async () => {
     const { data, error } = await supabase
       .from("chat_sessions")
-      .insert([
-        {
-          user_id: user?.id || null,
-          title: "New Chat",
-        },
-      ])
+      .insert([{ user_id: user?.id || null, title: "New Chat" }])
       .select()
       .single();
 
@@ -74,9 +81,7 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     return data.id;
   };
 
-  /* -----------------------------
-     SEND MESSAGE
-  ----------------------------- */
+  /* SEND MESSAGE (STREAMING VERSION) */
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -93,9 +98,11 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
       if (!chatId) chatId = await createChat();
 
       const userMsg = createMessage("user", text);
-      const thinkingMsg = createMessage("assistant", "Thinking...");
 
-      setMessages((prev) => [...prev, userMsg, thinkingMsg]);
+      // assistant placeholder (EMPTY for streaming)
+      const assistantMsg = createMessage("assistant", "");
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
       const session = await supabase.auth.getSession();
       const token = session?.data?.session?.access_token;
@@ -121,27 +128,30 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
 
       const responseText = data?.payload || "";
 
-      setMessages((prev) => {
-        const copy = [...prev];
-        const idx = copy.findLastIndex((m) => m.role === "assistant");
-        if (idx !== -1) {
-          copy[idx] = createMessage("assistant", responseText);
-        }
-        return copy;
-      });
+      /* STREAM INTO UI (ChatGPT style typing) */
+      let liveText = "";
 
-      await supabase.from("chat_messages").insert([
-        {
-          session_id: chatId,
-          role: "user",
-          content: text,
-        },
-        {
-          session_id: chatId,
-          role: "assistant",
-          content: responseText,
-        },
-      ]);
+      streamText((val) => {
+        setMessages((prev) => {
+          const copy = [...prev];
+          const idx = copy.findLastIndex((m) => m.role === "assistant");
+          if (idx !== -1) {
+            copy[idx] = {
+              ...copy[idx],
+              content: val,
+            };
+          }
+          return copy;
+        });
+      }, responseText);
+
+      /* SAVE AFTER STREAM COMPLETE */
+      setTimeout(async () => {
+        await supabase.from("chat_messages").insert([
+          { session_id: chatId, role: "user", content: text },
+          { session_id: chatId, role: "assistant", content: responseText },
+        ]);
+      }, responseText.length * 15 + 300);
     } catch (err) {
       console.error(err);
       setError(err.message);
@@ -156,9 +166,6 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
     }
   };
 
-  /* -----------------------------
-     STOP GENERATION
-  ----------------------------- */
   const stop = () => {
     abortRef.current?.abort();
     setLoading(false);
@@ -167,9 +174,9 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-white">
 
-      {/* HEADER */}
+      {/* HEADER (cleaned branding) */}
       <div className="p-3 border-b border-zinc-800 flex justify-between">
-        <div className="font-bold">ReubenAI</div>
+        <div className="font-bold">Chat</div>
 
         {loading && (
           <button onClick={stop} className="text-red-400 text-sm">
@@ -192,12 +199,12 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
             <ReactMarkdown>{m.content}</ReactMarkdown>
           </div>
         ))}
+
+        <div ref={bottomRef} />
       </div>
 
       {/* ERROR */}
-      {error && (
-        <div className="px-3 text-red-400 text-sm">{error}</div>
-      )}
+      {error && <div className="px-3 text-red-400 text-sm">{error}</div>}
 
       {/* INPUT */}
       <div className="p-3 border-t border-zinc-800 flex gap-2">
@@ -205,10 +212,8 @@ export default function ReubenAI({ user, activeChat, setActiveChat }) {
           className="flex-1 p-2 bg-zinc-900 rounded outline-none"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") sendMessage();
-          }}
-          placeholder="Ask ReubenAI..."
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          placeholder="Ask anything..."
         />
 
         <button

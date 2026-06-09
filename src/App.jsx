@@ -5,21 +5,18 @@ import { supabase } from "./lib/supabase.js";
 import Auth from "./Auth.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ReubenAI from "./components/ReubenAI.jsx";
-import Settings from "./components/Settings.jsx";
-import profile from "./components/profile.jsx";
 
 /* ===============================
-   CALLBACK (FIXED)
+   AUTH CALLBACK
 ================================= */
 function AuthCallback() {
   useEffect(() => {
     const handleAuth = async () => {
-      // wait for Supabase to store session from URL
       await supabase.auth.getSession();
 
       setTimeout(() => {
         window.location.replace("/");
-      }, 400);
+      }, 300);
     };
 
     handleAuth();
@@ -33,7 +30,7 @@ function AuthCallback() {
 }
 
 /* ===============================
-   APP
+   MAIN APP
 ================================= */
 export default function App() {
   const [user, setUser] = useState(undefined);
@@ -41,10 +38,10 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const loadingSessionsRef = useRef(false);
+  const loadingRef = useRef(false);
 
   /* ===============================
-     AUTH
+     AUTH STATE
   =============================== */
   useEffect(() => {
     let alive = true;
@@ -56,9 +53,11 @@ export default function App() {
 
     initAuth();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (alive) setUser(session?.user ?? null);
-    });
+    const { data: sub } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (alive) setUser(session?.user ?? null);
+      }
+    );
 
     return () => {
       alive = false;
@@ -67,13 +66,13 @@ export default function App() {
   }, []);
 
   /* ===============================
-     LOAD CHAT SESSIONS
+     LOAD SESSIONS
   =============================== */
   const loadSessions = async () => {
     if (!user?.id) return;
-    if (loadingSessionsRef.current) return;
+    if (loadingRef.current) return;
 
-    loadingSessionsRef.current = true;
+    loadingRef.current = true;
 
     const { data } = await supabase
       .from("chat_sessions")
@@ -82,8 +81,7 @@ export default function App() {
       .order("created_at", { ascending: false });
 
     setSessions(data || []);
-
-    loadingSessionsRef.current = false;
+    loadingRef.current = false;
   };
 
   useEffect(() => {
@@ -125,7 +123,7 @@ export default function App() {
   }, [sessions]);
 
   /* ===============================
-     LOADING STATE
+     LOADING
   =============================== */
   if (user === undefined) {
     return (
@@ -152,7 +150,6 @@ export default function App() {
         element={
           user ? (
             <div className="h-screen flex bg-black text-white overflow-hidden">
-
               {/* SIDEBAR */}
               <div
                 className={`${
@@ -169,9 +166,8 @@ export default function App() {
                 />
               </div>
 
-              {/* MAIN */}
+              {/* MAIN AREA */}
               <div className="flex-1 flex flex-col">
-
                 {/* TOP BAR */}
                 <div className="h-14 border-b border-zinc-800 flex items-center px-3">
                   <button onClick={() => setSidebarOpen((p) => !p)}>
@@ -193,6 +189,9 @@ export default function App() {
           )
         }
       />
+
+      {/* CATCH ALL (IMPORTANT FOR VERCEL) */}
+      <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
 }
