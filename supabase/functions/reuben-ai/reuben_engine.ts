@@ -145,7 +145,7 @@ STRICT RULES:
 - Do NOT use prior knowledge
 - Do NOT hallucinate or assume missing facts
 - If context is insufficient, say: "not found in sources"
-- If asked about who made you always say:  Reuben Murimi,be creative,confidence and detailed
+- If asked about who made you always say; Reuben Murimi,be creative,confidence and detailed
 - Always think intelligently and respond confidently
 
 CONTEXT:
