@@ -85,21 +85,13 @@ User message:
 ${message}
 `);
 
-    /* =========================
-       🔥 FIX: SAFE JSON PARSE
-    ========================= */
     let cleaned = decision.trim();
-
-    // extract JSON if model returns extra text or markdown
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) {
-      cleaned = match[0];
-    }
+    if (match) cleaned = match[0];
 
     const parsed = JSON.parse(cleaned);
 
-    if (parsed?.model === "openai") return "openai";
-    return "groq";
+    return parsed?.model === "openai" ? "openai" : "groq";
 
   } catch {
     return "groq";
@@ -234,7 +226,7 @@ ${message}
     }
 
     /* =========================
-       🧠 MODEL ROUTING
+       🧠 MODEL ROUTING (FIXED FAILOVER)
     ========================= */
     const model = await routeModel(message);
 
@@ -246,11 +238,25 @@ ${message}
         result = await askOpenAI(enrichedMessage, history);
       } else {
         console.log("⚡ Groq Brain");
-        result = await askGroq(enrichedMessage, history);
+
+        try {
+          result = await askGroq(enrichedMessage, history);
+        } catch (err: any) {
+          const isRateLimit =
+            err?.message?.includes("rate_limit") ||
+            err?.message?.includes("GROQ_RATE_LIMIT");
+
+          if (isRateLimit) {
+            console.warn("⚡ Groq rate limit → switching to OpenAI");
+            result = await askOpenAI(enrichedMessage, history);
+          } else {
+            throw err;
+          }
+        }
       }
     } catch (err) {
       console.warn("Primary brain failed, switching fallback...");
-      result = await askGroq(enrichedMessage, history);
+      result = await askOpenAI(enrichedMessage, history);
     }
 
     return {
