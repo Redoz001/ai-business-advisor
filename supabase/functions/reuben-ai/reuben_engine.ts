@@ -10,7 +10,6 @@ import {
   saveFeedback,
   extractLearning
 } from "./ai/memory.ts";
-
 /* =========================
    🌐 WEB DETECTOR
 ========================= */
@@ -65,7 +64,7 @@ function needsElevenLabs(message: string) {
 }
 
 /* =========================
-   🧠 SMART ROUTER (FIXED)
+   🧠 SMART ROUTER (NO KEYWORDS DEPENDENCY)
 ========================= */
 async function routeModel(message: string): Promise<"openai" | "groq"> {
   try {
@@ -85,14 +84,10 @@ User message:
 ${message}
 `);
 
-    let cleaned = decision.trim();
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) cleaned = match[0];
+    const parsed = JSON.parse(decision);
 
-    const parsed = JSON.parse(cleaned);
-
-    return parsed?.model === "openai" ? "openai" : "groq";
-
+    if (parsed?.model === "openai") return "openai";
+    return "groq";
   } catch {
     return "groq";
   }
@@ -122,6 +117,9 @@ export async function routeRequest(message: string, context: any) {
   let webContext = "";
 
   try {
+    /* =========================
+       🌐 WEB SEARCH
+    ========================= */
     if (needsWeb(message)) {
       console.log("🌐 Tavily search triggered");
 
@@ -159,7 +157,7 @@ ${message}
       : message;
 
     /* =========================
-       🎬 RUNWAY
+       🎬 RUNWAY (IMAGE/VIDEO)
     ========================= */
     if (needsRunway(message)) {
       console.log("🎬 Runway triggered");
@@ -226,7 +224,7 @@ ${message}
     }
 
     /* =========================
-       🧠 MODEL ROUTING (FIXED FAILOVER)
+       🧠 SMART MODEL ROUTING
     ========================= */
     const model = await routeModel(message);
 
@@ -238,25 +236,11 @@ ${message}
         result = await askOpenAI(enrichedMessage, history);
       } else {
         console.log("⚡ Groq Brain");
-
-        try {
-          result = await askGroq(enrichedMessage, history);
-        } catch (err: any) {
-          const isRateLimit =
-            err?.message?.includes("rate_limit") ||
-            err?.message?.includes("GROQ_RATE_LIMIT");
-
-          if (isRateLimit) {
-            console.warn("⚡ Groq rate limit → switching to OpenAI");
-            result = await askOpenAI(enrichedMessage, history);
-          } else {
-            throw err;
-          }
-        }
+        result = await askGroq(enrichedMessage, history);
       }
     } catch (err) {
       console.warn("Primary brain failed, switching fallback...");
-      result = await askOpenAI(enrichedMessage, history);
+      result = await askGroq(enrichedMessage, history);
     }
 
     return {
