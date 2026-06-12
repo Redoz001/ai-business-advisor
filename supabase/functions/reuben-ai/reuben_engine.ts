@@ -1,6 +1,5 @@
 import { askGroq } from "./providers/groq.ts";
 import { askOpenAI } from "./providers/openai.ts";
-import { askOllama } from "./providers/ollama.ts";
 import { searchTavily } from "./providers/tavily.ts";
 
 import { generateImage } from "./providers/runway.ts";
@@ -231,39 +230,18 @@ ${message}
 
     let result = "";
 
-try {
-  if (model === "openai") {
-    console.log("🧠 OpenAI Brain");
-    result = await askOpenAI(enrichedMessage, history);
-  } else {
-    console.log("⚡ Groq Brain");
-    result = await askGroq(enrichedMessage, history);
-  }
-} catch (primaryError) {
-  console.warn("Primary brain failed.");
-
-  try {
-    if (model === "openai") {
-      console.log("⚡ Fallback -> Groq");
-      result = await askGroq(enrichedMessage, history);
-    } else {
-      console.log("🧠 Fallback -> OpenAI");
-      result = await askOpenAI(enrichedMessage, history);
-    }
-  } catch (secondaryError) {
-    console.warn("Secondary brain failed.");
-
     try {
-      console.log("🦙 Final Fallback -> Ollama");
-      result = await askOllama(enrichedMessage, history);
-    } catch (ollamaError) {
-      console.error("All models failed.");
-
-      result =
-        "All AI models are currently unavailable. Please try again later.";
+      if (model === "openai") {
+        console.log("🧠 OpenAI Brain");
+        result = await askOpenAI(enrichedMessage, history);
+      } else {
+        console.log("⚡ Groq Brain");
+        result = await askGroq(enrichedMessage, history);
+      }
+    } catch (err) {
+      console.warn("Primary brain failed, switching fallback...");
+      result = await askGroq(enrichedMessage, history);
     }
-  }
-}
 
     return {
       type: "text",
@@ -282,4 +260,4 @@ try {
       mode: "error",
     };
   }
-} 
+}
