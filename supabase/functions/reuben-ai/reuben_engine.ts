@@ -6,41 +6,46 @@ import { generateImage } from "./providers/runway.ts";
 import { generateSpeech } from "./providers/elevenlabs.ts";
 
 /* =========================
+   🧠 SYSTEM IDENTITY (LOCKED)
+   - NEVER passed to models
+   - ONLY used by router
+========================= */
+
+const SYSTEM = {
+  name: "ReuNexus AI",
+  creator: "Reuben Murimi",
+  type: "multi-model fusion AI system",
+  models: ["OpenAI", "Groq", "Ollama"],
+  description:
+    "A professional AI system that fuses multiple reasoning models into a single response.",
+};
+
+/* =========================
    🧠 INTENT CLASSIFIER
 ========================= */
 
 function getIntent(message: string) {
-  const msg = message.toLowerCase().trim();
+  const m = message.toLowerCase().trim();
 
-  if (["hi", "hello", "hey", "yo"].includes(msg)) return "greeting";
-
-  if (msg.includes("who are you") || msg.includes("what are you"))
-    return "identity";
+  if (["hi", "hello", "hey", "yo"].includes(m)) return "greeting";
 
   if (
-    msg.includes("image") ||
-    msg.includes("picture") ||
-    msg.includes("draw") ||
-    msg.includes("generate image")
-  )
-    return "image";
+    m.includes("who are you") ||
+    m.includes("what are you")
+  ) return "identity";
 
-  if (
-    msg.includes("speak") ||
-    msg.includes("voice") ||
-    msg.includes("audio") ||
-    msg.includes("tts")
-  )
+  if (m.includes("image") || m.includes("picture")) return "image";
+
+  if (m.includes("voice") || m.includes("audio") || m.includes("tts"))
     return "tts";
 
   if (
-    msg.includes("today") ||
-    msg.includes("latest") ||
-    msg.includes("news") ||
-    msg.includes("what is") ||
-    msg.includes("who is")
-  )
-    return "web";
+    m.includes("today") ||
+    m.includes("latest") ||
+    m.includes("news") ||
+    m.includes("who is") ||
+    m.includes("what is")
+  ) return "web";
 
   return "reasoning";
 }
@@ -58,7 +63,8 @@ function sanitizeHistory(history: any[]) {
 }
 
 /* =========================
-   🚨 VALIDATION (IGNORE BAD OUTPUTS)
+   🚨 VALIDATION FILTER
+   (removes quota/error noise)
 ========================= */
 
 function isValid(text: any) {
@@ -77,7 +83,7 @@ function isValid(text: any) {
 }
 
 /* =========================
-   ⚡ WEIGHT SCORING
+   ⚖️ WEIGHT SCORING SYSTEM
 ========================= */
 
 function score(text: string, model: string) {
@@ -96,16 +102,18 @@ function score(text: string, model: string) {
 
 /* =========================
    🧠 CONTRIBUTOR PROMPT
+   (NO identity leakage allowed)
 ========================= */
 
 const contributorPrompt = (input: string) => `
-You are a reasoning contributor.
+You are a reasoning component in a professional AI system.
 
-RULES:
-- no greetings
-- no identity
-- only useful reasoning
-- do NOT give final polished answer
+STRICT RULES:
+- Do NOT introduce yourself
+- Do NOT mention the system or creator
+- Do NOT answer greetings
+- Only provide reasoning or factual fragments
+- No final polished response
 
 TASK:
 ${input}
@@ -120,30 +128,34 @@ export async function routeRequest(message: string, context: any) {
   const intent = getIntent(message);
 
   /* =========================
-     🟢 GREETING / CHAT MODE
+     🟢 IDENTITY (SYSTEM CONTROLLED)
   ========================= */
-
-  if (intent === "greeting") {
-    return {
-      type: "text",
-      payload:
-        "Hey 👋 I'm ReuNexus AI — a multi-model fusion system (OpenAI, Groq, Ollama). Ask me anything.",
-      mode: "conversation",
-      webUsed: false,
-    };
-  }
 
   if (intent === "identity") {
     return {
       type: "text",
-      payload: "I was created by Reuben Murimi.",
+      payload: `I am ${SYSTEM.name}, a ${SYSTEM.type} created by ${SYSTEM.creator}.`,
       mode: "identity",
       webUsed: false,
     };
   }
 
   /* =========================
-     🎬 IMAGE MODE
+     🟢 GREETING (CONSISTENT OUTPUT)
+  ========================= */
+
+  if (intent === "greeting") {
+    return {
+      type: "text",
+      payload:
+        "Hello. I am ReuNexus AI, a professional multi-model system designed for reasoning, analysis, and information processing.",
+      mode: "conversation",
+      webUsed: false,
+    };
+  }
+
+  /* =========================
+     🎬 IMAGE GENERATION
   ========================= */
 
   if (intent === "image") {
@@ -159,12 +171,12 @@ export async function routeRequest(message: string, context: any) {
 
       return { type: "image", payload: url, mode: "image" };
     } catch {
-      return { type: "text", payload: "Image failed.", mode: "error" };
+      return { type: "text", payload: "Image generation failed.", mode: "error" };
     }
   }
 
   /* =========================
-     🔊 TTS MODE
+     🔊 TEXT TO SPEECH
   ========================= */
 
   if (intent === "tts") {
@@ -172,12 +184,12 @@ export async function routeRequest(message: string, context: any) {
       const audio = await generateSpeech(message);
       return { type: "audio", payload: audio, mode: "tts" };
     } catch {
-      return { type: "text", payload: "Audio failed.", mode: "error" };
+      return { type: "text", payload: "Audio generation failed.", mode: "error" };
     }
   }
 
   /* =========================
-     🌐 WEB MODE
+     🌐 WEB ENRICHMENT
   ========================= */
 
   let webContext = "";
@@ -195,65 +207,52 @@ export async function routeRequest(message: string, context: any) {
     }
   }
 
-  const enriched = webContext
+  const enrichedMessage = webContext
     ? `CONTEXT:\n${webContext}\n\nQUESTION:\n${message}`
     : message;
 
   /* =========================
-     🧠 PARALLEL MODELS (FUSION CORE)
+     🧠 PARALLEL MODEL EXECUTION
   ========================= */
 
   const results = await Promise.allSettled([
-    askOpenAI(contributorPrompt(enriched), history),
-    askGroq(contributorPrompt(enriched), history),
-    askOllama(contributorPrompt(enriched), history),
+    askOpenAI(contributorPrompt(enrichedMessage), history),
+    askGroq(contributorPrompt(enrichedMessage), history),
+    askOllama(contributorPrompt(enrichedMessage), history),
   ]);
-
-  const labeled = [
-    { model: "openai", res: results[0] },
-    { model: "groq", res: results[1] },
-    { model: "ollama", res: results[2] },
-  ];
-
-  /* =========================
-     🧠 FILTER + SCORE
-  ========================= */
 
   const candidates: { text: string; model: string; score: number }[] = [];
 
-  for (const item of labeled) {
-    if (item.res.status === "fulfilled") {
-      const text = item.res.value;
+  const models = ["openai", "groq", "ollama"];
 
-      if (isValid(text)) {
-        candidates.push({
-          text,
-          model: item.model,
-          score: score(text, item.model),
-        });
-      }
+  results.forEach((res, i) => {
+    if (res.status === "fulfilled" && isValid(res.value)) {
+      candidates.push({
+        text: res.value,
+        model: models[i],
+        score: score(res.value, models[i]),
+      });
     }
-  }
+  });
 
   /* =========================
-     🧠 FALLBACK IF ALL FAIL
+     🚨 NO VALID OUTPUT
   ========================= */
 
   if (candidates.length === 0) {
     return {
       type: "text",
-      payload: "No AI models returned a valid response. Try again.",
+      payload: "All reasoning models are currently unavailable.",
       mode: "fusion-fail",
       webUsed: !!webContext,
     };
   }
 
   /* =========================
-     🧠 PICK BEST SIGNALS
+     🧠 SELECT TOP SIGNALS
   ========================= */
 
   candidates.sort((a, b) => b.score - a.score);
-
   const top = candidates.slice(0, 3);
 
   const fusionInput = top
@@ -265,18 +264,18 @@ export async function routeRequest(message: string, context: any) {
   ========================= */
 
   const fusionPrompt = `
-You are a fusion reasoning engine.
+You are a professional AI fusion engine.
 
 TASK:
-Combine all model outputs into ONE final answer.
+Combine multiple reasoning inputs into one clear and accurate response.
 
 RULES:
-- merge best ideas
+- professional tone
 - remove repetition
-- ignore weak or broken parts
-- do NOT mention models
+- ignore weak or incomplete reasoning
+- never mention models or system internals
 
-INPUTS:
+INPUT:
 ${fusionInput}
 
 QUESTION:
@@ -301,7 +300,7 @@ FINAL ANSWER:
     type: "text",
     payload: isValid(final)
       ? final
-      : "I couldn't generate a strong response. Please rephrase.",
+      : "Unable to generate a stable response. Please try again.",
     mode: "weighted-fusion",
     webUsed: !!webContext,
   };
