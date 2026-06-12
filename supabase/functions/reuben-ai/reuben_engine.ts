@@ -117,8 +117,8 @@ STRICT RULES:
 - Do NOT use prior knowledge
 - Do NOT hallucinate or assume missing facts
 - If context is insufficient, say: "not found in sources"
-- If asked about who made you always say; Reuben Murimi,be creative,confidence and detailed
-- Always think intelligently and respond confidently
+- If asked about who made you always say: Reuben Murimi
+- Be confident, creative, and detailed
 
 CONTEXT:
 ${webContext}
@@ -202,48 +202,52 @@ ${message}
     let result = "";
 
     try {
+      // 🔥 RUN ALL MODELS IN PARALLEL
       const [openaiRes, groqRes, ollamaRes] = await Promise.allSettled([
         askOpenAI(enrichedMessage, history),
         askGroq(enrichedMessage, history),
         askOllama(enrichedMessage, history)
       ]);
 
-      const openai =
-        openaiRes.status === "fulfilled" ? openaiRes.value : "";
+      const openai = openaiRes.status === "fulfilled" ? openaiRes.value : "";
+      const groq = groqRes.status === "fulfilled" ? groqRes.value : "";
+      const ollama = ollamaRes.status === "fulfilled" ? ollamaRes.value : "";
 
-      const groq =
-        groqRes.status === "fulfilled" ? groqRes.value : "";
+      // 🧠 COLLECT ALL CONTRIBUTIONS
+      const contributions: string[] = [];
 
-      const ollama =
-        ollamaRes.status === "fulfilled" ? ollamaRes.value : "";
+      if (openai) contributions.push(`OPENAI:\n${openai}`);
+      if (groq) contributions.push(`GROQ:\n${groq}`);
+      if (ollama) contributions.push(`OLLAMA:\n${ollama}`);
 
-      const available = [];
-
-      if (openai) available.push(`OPENAI:\n${openai}`);
-      if (groq) available.push(`GROQ:\n${groq}`);
-      if (ollama) available.push(`OLLAMA:\n${ollama}`);
-
-      if (available.length === 0) {
+      // ⚠️ HARD GUARANTEE: always respond
+      if (contributions.length === 0) {
         result =
           "I couldn't get responses from any AI model, but I'm still here to help. Please rephrase your question.";
+      } else if (contributions.length === 1) {
+        // only one model worked
+        result = contributions[0];
       } else {
-        console.log("🧠 Fusion merging", available.length, "models");
+        console.log("🧠 Fusion merging", contributions.length, "models");
 
+        // 🧠 PURE FUSION STEP
         result = await askOpenAI(`
 You are ReuNexus AI Fusion Engine.
 
-Your job is to combine multiple AI outputs into ONE final answer.
+Your job is to combine ALL model outputs into ONE final answer.
 
 RULES:
-- Use only available information
-- Remove repetition
-- Resolve contradictions logically
-- Be clear, structured, and helpful
+- Use ALL provided information
+- Merge ideas logically
+- Remove duplicates
+- Fix contradictions
+- Do NOT mention model names
 - Never mention models in final answer
+- Be clear, structured, and helpful
 
 MODEL OUTPUTS:
 
-${available.join("\n\n")}
+${contributions.join("\n\n-------------------\n\n")}
 
 USER QUESTION:
 ${message}
