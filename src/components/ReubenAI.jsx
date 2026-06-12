@@ -214,7 +214,7 @@ const sendMessage = async () => {
       await supabase
         .from("chat_sessions")
         .update({ title })
-        .eq("id", chatId);
+        .eq("id", user_id);
     }
 
     const session = await supabase.auth.getSession();

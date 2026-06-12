@@ -1,10 +1,98 @@
 import { askGroq } from "./providers/groq.ts";
 import { askOpenAI } from "./providers/openai.ts";
 import { askOllama } from "./providers/ollama.ts";
-
 import { searchTavily } from "./providers/tavily.ts";
+
 import { generateImage } from "./providers/runway.ts";
 import { generateSpeech } from "./providers/elevenlabs.ts";
+import {
+  getMemory,
+  saveMemory,
+  saveFeedback,
+  extractLearning
+} from "./ai/memory.ts";
+/* =========================
+   🌐 WEB DETECTOR
+========================= */
+function needsWeb(message: string) {
+  const msg = message.toLowerCase();
+
+  return (
+    msg.includes("today") ||
+    msg.includes("current") ||
+    msg.includes("latest") ||
+    msg.includes("news") ||
+    msg.includes("who is") ||
+    msg.includes("price") ||
+    msg.includes("what is")
+  );
+}
+
+/* =========================
+   🎬 RUNWAY DETECTOR
+========================= */
+function needsRunway(message: string) {
+  const msg = message.toLowerCase();
+
+  return (
+    msg.includes("image") ||
+    msg.includes("picture") ||
+    msg.includes("draw") ||
+    msg.includes("render") ||
+    msg.includes("photo") ||
+    msg.includes("generate image") ||
+    msg.includes("create image") ||
+    msg.includes("make image") ||
+    msg.includes("video") ||
+    msg.includes("clip")
+  );
+}
+
+/* =========================
+   🔊 ELEVENLABS DETECTOR
+========================= */
+function needsElevenLabs(message: string) {
+  const msg = message.toLowerCase();
+
+  return (
+    msg.includes("speak") ||
+    msg.includes("voice") ||
+    msg.includes("audio") ||
+    msg.includes("read") ||
+    msg.includes("tts") ||
+    msg.includes("elevenlabs")
+  );
+}
+
+/* =========================
+   🧠 SMART ROUTER (NO KEYWORDS DEPENDENCY)
+========================= */
+async function routeModel(message: string): Promise<"openai" | "groq"> {
+  try {
+    const decision = await askGroq(`
+You are an AI routing engine.
+
+Decide which model should handle this request.
+
+RULES:
+- openai → complex reasoning, coding, debugging, architecture, deep explanation, analysis, planning
+- groq → simple Q&A, short answers, casual chat, basic info
+
+Return ONLY valid JSON:
+{ "model": "openai" | "groq", "confidence": 0-1 }
+
+User message:
+${message}
+`);
+
+    const parsed = JSON.parse(decision);
+
+    if (parsed?.model === "openai") return "openai";
+    return "groq";
+  } catch {
+    return "groq";
+  }
+}
 
 /* =========================
    🧹 HISTORY SANITIZER
@@ -15,124 +103,10 @@ function sanitizeHistory(history: any[]) {
   return history
     .filter(m => m?.content && typeof m.content === "string")
     .slice(-10)
-    .map(m => ({ role: m.role, content: m.content }));
-}
-
-/* =========================
-   🚨 RESPONSE VALIDATOR
-========================= */
-function isValid(text: any) {
-  if (!text || typeof text !== "string") return false;
-
-  const t = text.toLowerCase().trim();
-
-  return (
-    t.length > 3 &&
-    !t.includes("error") &&
-    !t.includes("quota") &&
-    !t.includes("rate limit") &&
-    !t.includes("failed") &&
-    !t.includes("unauthorized") &&
-    !t.includes("insufficient")
-  );
-}
-
-/* =========================
-   🌐 WEB DETECTION
-========================= */
-function needsWeb(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("today") ||
-    m.includes("latest") ||
-    m.includes("news") ||
-    m.includes("who is") ||
-    m.includes("price") ||
-    m.includes("what is")
-  );
-}
-
-/* =========================
-   🎬 IMAGE DETECTION
-========================= */
-function needsImage(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("image") ||
-    m.includes("picture") ||
-    m.includes("draw") ||
-    m.includes("render") ||
-    m.includes("photo")
-  );
-}
-
-/* =========================
-   🔊 TTS DETECTION
-========================= */
-function needsTTS(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("speak") ||
-    m.includes("voice") ||
-    m.includes("audio") ||
-    m.includes("read")
-  );
-}
-
-/* =========================
-   🧠 MODEL CALL WRAPPER (SAFE)
-========================= */
-async function safeCall(fn: Function, input: string, history: any[]) {
-  try {
-    const res = await fn(input, history);
-    return isValid(res) ? res : null;
-  } catch {
-    return null;
-  }
-}
-
-/* =========================
-   🧠 CONTRIBUTOR PROMPT
-========================= */
-function contributorPrompt(input: string) {
-  return `
-You are a reasoning contributor.
-
-RULES:
-- Do NOT introduce yourself
-- Only provide useful reasoning
-- No greetings
-- No refusal unless unsafe
-
-TASK:
-${input}
-`;
-}
-
-/* =========================
-   🧠 FUSION PROMPT
-========================= */
-function fusionPrompt(signals: string[], question: string) {
-  return `
-You are a professional AI fusion engine.
-
-TASK:
-Merge all reasoning into ONE high-quality answer.
-
-RULES:
-- remove duplicates
-- resolve contradictions
-- ignore weak or broken parts
-- do NOT mention models
-
-SIGNALS:
-${signals.join("\n\n---\n\n")}
-
-QUESTION:
-${question}
-
-FINAL ANSWER:
-`;
+    .map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
 }
 
 /* =========================
@@ -143,113 +117,169 @@ export async function routeRequest(message: string, context: any) {
 
   let webContext = "";
 
-  /* =========================
-     🌐 WEB
-  ========================= */
-  if (needsWeb(message)) {
-    try {
-      const search = await searchTavily(message);
-      webContext =
-        search?.answer ||
-        search?.results?.map((r: any) => r.content).join("\n") ||
-        "";
-    } catch {
-      webContext = "";
-    }
-  }
-
-  const input = webContext
-    ? `CONTEXT:\n${webContext}\n\nQUESTION:\n${message}`
-    : message;
-
-  /* =========================
-     🎬 IMAGE MODE
-  ========================= */
-  if (needsImage(message)) {
-    try {
-      const img = await generateImage(message);
-
-      const url =
-        typeof img === "string"
-          ? img
-          : img?.output_url ||
-            img?.url ||
-            img?.payload ||
-            (Array.isArray(img?.output) ? img.output[0] : null);
-
-      if (!url) throw new Error();
-
-      return { type: "image", payload: url, mode: "image" };
-    } catch {
-      return { type: "text", payload: "Image generation failed.", mode: "error" };
-    }
-  }
-
-  /* =========================
-     🔊 TTS MODE
-  ========================= */
-  if (needsTTS(message)) {
-    try {
-      const audio = await generateSpeech(message);
-      return { type: "audio", payload: audio, mode: "tts" };
-    } catch {
-      return { type: "text", payload: "Audio generation failed.", mode: "error" };
-    }
-  }
-
-  /* =========================
-     🧠 PARALLEL MODELS (OPENAI + GROQ + OLLAMA)
-  ========================= */
-
-  const [openai, groq, ollama] = await Promise.all([
-    safeCall(askOpenAI, contributorPrompt(input), history),
-    safeCall(askGroq, contributorPrompt(input), history),
-    safeCall(askOllama, contributorPrompt(input), history),
-  ]);
-
-  const signals: string[] = [];
-
-  if (openai) signals.push(`OPENAI:\n${openai}`);
-  if (groq) signals.push(`GROQ:\n${groq}`);
-  if (ollama) signals.push(`OLLAMA:\n${ollama}`);
-
-  /* =========================
-     🚨 FALLBACK IF ALL FAIL
-  ========================= */
-  if (signals.length === 0) {
-    return {
-      type: "text",
-      payload: "All AI models are currently unavailable. Please try again.",
-      mode: "fallback",
-    };
-  }
-
-  /* =========================
-     🧠 FUSION STEP (PRIMARY: GROQ → FALLBACK CHAIN)
-  ========================= */
-
-  let final = "";
-
-  const fusionInput = fusionPrompt(signals, message);
-
   try {
-    final = await askGroq(fusionInput, history);
-  } catch {
-    try {
-      final = await askOpenAI(fusionInput, history);
-    } catch {
+    /* =========================
+       🌐 WEB SEARCH
+    ========================= */
+    if (needsWeb(message)) {
+      console.log("🌐 Tavily search triggered");
+
       try {
-        final = await askOllama(fusionInput, history);
-      } catch {
-        final = signals[0]; // last-resort fallback
+        const search = await searchTavily(message);
+
+        webContext =
+          search?.answer ||
+          search?.results?.map((r: any) => r.content).join("\n") ||
+          "";
+      } catch (err: any) {
+        console.warn("Tavily failed:", err.message);
+        webContext = "";
       }
     }
-  }
 
-  return {
-    type: "text",
-    payload: isValid(final) ? final : signals[0],
-    webUsed: !!webContext,
-    mode: "fusion",
-  };
+    const enrichedMessage = webContext
+      ? `
+You are ReuNexus AI (Grounded Mode).
+
+STRICT RULES:
+- Use ONLY the provided context
+- Do NOT use prior knowledge
+- Do NOT hallucinate or assume missing facts
+- If context is insufficient, say: "not found in sources"
+- If asked about who made you always say; Reuben Murimi,be creative,confidence and detailed
+- Always think intelligently and respond confidently
+
+CONTEXT:
+${webContext}
+
+QUESTION:
+${message}
+`
+      : message;
+
+    /* =========================
+       🎬 RUNWAY (IMAGE/VIDEO)
+    ========================= */
+    if (needsRunway(message)) {
+      console.log("🎬 Runway triggered");
+
+      try {
+        const imageResult = await generateImage(message);
+
+        const finalUrl =
+          typeof imageResult === "string"
+            ? imageResult
+            : imageResult?.output_url ||
+              imageResult?.url ||
+              imageResult?.payload ||
+              (Array.isArray(imageResult?.output) ? imageResult.output[0] : null) ||
+              (Array.isArray(imageResult?.result) ? imageResult.result[0] : null);
+
+        if (!finalUrl || typeof finalUrl !== "string") {
+          throw new Error("No valid image URL returned from Runway");
+        }
+
+        return {
+          type: "image",
+          payload: finalUrl,
+          webUsed: false,
+          mode: "runway",
+        };
+      } catch (err: any) {
+        console.warn("Runway failed:", err.message);
+
+        return {
+          type: "text",
+          payload: "Image generation failed.",
+          webUsed: false,
+          mode: "runway-error",
+        };
+      }
+    }
+
+    /* =========================
+       🔊 ELEVENLABS
+    ========================= */
+    if (needsElevenLabs(message)) {
+      console.log("🔊 ElevenLabs triggered");
+
+      try {
+        const audioUrl = await generateSpeech(message);
+
+        return {
+          type: "audio",
+          payload: audioUrl,
+          webUsed: false,
+          mode: "elevenlabs",
+        };
+      } catch (err: any) {
+        console.warn("ElevenLabs failed:", err.message);
+
+        return {
+          type: "text",
+          payload: "Audio generation failed.",
+          webUsed: false,
+          mode: "elevenlabs-error",
+        };
+      }
+    }
+
+    /* =========================
+       🧠 SMART MODEL ROUTING
+    ========================= */
+    const model = await routeModel(message);
+
+    let result = "";
+
+try {
+  if (model === "openai") {
+    console.log("🧠 OpenAI Brain");
+    result = await askOpenAI(enrichedMessage, history);
+  } else {
+    console.log("⚡ Groq Brain");
+    result = await askGroq(enrichedMessage, history);
+  }
+} catch (primaryError) {
+  console.warn("Primary brain failed.");
+
+  try {
+    if (model === "openai") {
+      console.log("⚡ Fallback -> Groq");
+      result = await askGroq(enrichedMessage, history);
+    } else {
+      console.log("🧠 Fallback -> OpenAI");
+      result = await askOpenAI(enrichedMessage, history);
+    }
+  } catch (secondaryError) {
+    console.warn("Secondary brain failed.");
+
+    try {
+      console.log("🦙 Final Fallback -> Ollama");
+      result = await askOllama(enrichedMessage, history);
+    } catch (ollamaError) {
+      console.error("All models failed.");
+
+      result =
+        "All AI models are currently unavailable. Please try again later.";
+    }
+  }
 }
+
+    return {
+      type: "text",
+      payload: result || "No response generated.",
+      webUsed: !!webContext,
+      mode: webContext ? "grounded" : "llm",
+    };
+
+  } catch (err: any) {
+    console.error("routeRequest fatal error:", err);
+
+    return {
+      type: "text",
+      payload: "System error in ReuNexus AI.",
+      webUsed: false,
+      mode: "error",
+    };
+  }
+} 
