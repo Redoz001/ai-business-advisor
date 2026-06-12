@@ -13,11 +13,10 @@ import {
 } from "./ai/memory.ts";
 
 /* =========================
-   🌐 WEB DETECTOR
+   🌐 DETECTORS
 ========================= */
 function needsWeb(message: string) {
   const msg = message.toLowerCase();
-
   return (
     msg.includes("today") ||
     msg.includes("current") ||
@@ -29,12 +28,8 @@ function needsWeb(message: string) {
   );
 }
 
-/* =========================
-   🎬 RUNWAY DETECTOR
-========================= */
 function needsRunway(message: string) {
   const msg = message.toLowerCase();
-
   return (
     msg.includes("image") ||
     msg.includes("picture") ||
@@ -49,12 +44,8 @@ function needsRunway(message: string) {
   );
 }
 
-/* =========================
-   🔊 ELEVENLABS DETECTOR
-========================= */
 function needsElevenLabs(message: string) {
   const msg = message.toLowerCase();
-
   return (
     msg.includes("speak") ||
     msg.includes("voice") ||
@@ -66,7 +57,7 @@ function needsElevenLabs(message: string) {
 }
 
 /* =========================
-   🧹 HISTORY SANITIZER
+   🧹 HISTORY
 ========================= */
 function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
@@ -81,22 +72,19 @@ function sanitizeHistory(history: any[]) {
 }
 
 /* =========================
-   🧠 SAFE CONTRIBUTOR FILTER
+   🧠 VALIDATION
 ========================= */
-function isValidContribution(text: any) {
+function isValid(text: any) {
   if (!text || typeof text !== "string") return false;
 
-  const t = text.trim().toLowerCase();
+  const t = text.toLowerCase().trim();
 
   if (t.length < 3) return false;
-
-  // 🚨 filter API / quota / failure noise
   if (t.includes("error")) return false;
-  if (t.includes("rate limit")) return false;
   if (t.includes("quota")) return false;
+  if (t.includes("rate limit")) return false;
   if (t.includes("failed")) return false;
   if (t.includes("unauthorized")) return false;
-  if (t.includes("invalid api")) return false;
 
   return true;
 }
@@ -111,7 +99,7 @@ export async function routeRequest(message: string, context: any) {
 
   try {
     /* =========================
-       🌐 WEB SEARCH
+       🌐 WEB
     ========================= */
     if (needsWeb(message)) {
       try {
@@ -137,26 +125,25 @@ ${message}
       : message;
 
     /* =========================
-       🎬 IMAGE / VIDEO
+       🎬 IMAGE
     ========================= */
     if (needsRunway(message)) {
       try {
-        const imageResult = await generateImage(message);
+        const img = await generateImage(message);
 
-        const finalUrl =
-          typeof imageResult === "string"
-            ? imageResult
-            : imageResult?.output_url ||
-              imageResult?.url ||
-              imageResult?.payload ||
-              (Array.isArray(imageResult?.output) ? imageResult.output[0] : null) ||
-              (Array.isArray(imageResult?.result) ? imageResult.result[0] : null);
+        const url =
+          typeof img === "string"
+            ? img
+            : img?.output_url ||
+              img?.url ||
+              img?.payload ||
+              (Array.isArray(img?.output) ? img.output[0] : null);
 
-        if (!finalUrl) throw new Error();
+        if (!url) throw new Error();
 
         return {
           type: "image",
-          payload: finalUrl,
+          payload: url,
           webUsed: false,
           mode: "runway",
         };
@@ -175,11 +162,11 @@ ${message}
     ========================= */
     if (needsElevenLabs(message)) {
       try {
-        const audioUrl = await generateSpeech(message);
+        const audio = await generateSpeech(message);
 
         return {
           type: "audio",
-          payload: audioUrl,
+          payload: audio,
           webUsed: false,
           mode: "elevenlabs",
         };
@@ -194,24 +181,25 @@ ${message}
     }
 
     /* =========================
-       🧠 MULTI-MODEL FUSION
+       🧠 CONTRIBUTOR PROMPT
     ========================= */
-
     const contributorPrompt = `
 You are NOT an assistant.
-
-You are a reasoning contributor.
+You are a reasoning contributor only.
 
 RULES:
 - NO greetings
-- NO assistant identity
-- ONLY reasoning, facts, insights
+- NO identity
+- ONLY insights, reasoning, facts
 - NO final answer
 
-User question:
+User:
 ${enrichedMessage}
 `;
 
+    /* =========================
+       🧠 PARALLEL MODELS
+    ========================= */
     const [openaiRes, groqRes, ollamaRes] = await Promise.allSettled([
       askOpenAI(contributorPrompt, history),
       askGroq(contributorPrompt, history),
@@ -219,17 +207,17 @@ ${enrichedMessage}
     ]);
 
     const openai =
-      openaiRes.status === "fulfilled" && isValidContribution(openaiRes.value)
+      openaiRes.status === "fulfilled" && isValid(openaiRes.value)
         ? openaiRes.value
         : "";
 
     const groq =
-      groqRes.status === "fulfilled" && isValidContribution(groqRes.value)
+      groqRes.status === "fulfilled" && isValid(groqRes.value)
         ? groqRes.value
         : "";
 
     const ollama =
-      ollamaRes.status === "fulfilled" && isValidContribution(ollamaRes.value)
+      ollamaRes.status === "fulfilled" && isValid(ollamaRes.value)
         ? ollamaRes.value
         : "";
 
@@ -239,23 +227,22 @@ ${enrichedMessage}
     if (groq) signals.push(`GROQ:\n${groq}`);
     if (ollama) signals.push(`OLLAMA:\n${ollama}`);
 
+    /* =========================
+       🧠 SAFE FUSION ENGINE (FIXED)
+    ========================= */
+
     let result = "";
 
-    if (signals.length === 0) {
-      result =
-        "I couldn't get responses from AI models right now. Please try again.";
-    } else {
-      result = await askOpenAI(`
+    const fusionPrompt = `
 You are a Fusion Engine.
 
-Merge all reasoning signals into ONE clear answer.
+Combine reasoning signals into ONE answer.
 
 RULES:
-- Combine ideas
-- Remove duplicates
-- Resolve contradictions
-- Ignore errors or noise
-- Do NOT mention models
+- merge ideas
+- remove repetition
+- ignore errors or noise
+- do NOT mention models
 
 SIGNALS:
 ${signals.join("\n\n---\n\n")}
@@ -264,7 +251,36 @@ QUESTION:
 ${message}
 
 FINAL ANSWER:
-`);
+`;
+
+    // 🔥 CRITICAL: fallback chain prevents quota crash
+    try {
+      result = await askOpenAI(fusionPrompt, history);
+    } catch (e1) {
+      console.warn("OpenAI fusion failed → fallback Groq");
+
+      try {
+        result = await askGroq(fusionPrompt, history);
+      } catch (e2) {
+        console.warn("Groq fusion failed → fallback Ollama");
+
+        try {
+          result = await askOllama(fusionPrompt, history);
+        } catch (e3) {
+          console.warn("All fusion models failed");
+
+          result =
+            "All AI models are currently unavailable. Please try again.";
+        }
+      }
+    }
+
+    /* =========================
+       🧠 FINAL SAFETY
+    ========================= */
+    if (!isValid(result)) {
+      result =
+        "I couldn't generate a valid response. Please try rephrasing your question.";
     }
 
     return {
