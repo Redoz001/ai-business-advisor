@@ -17,83 +17,78 @@ function sanitizeHistory(history: any[]) {
 }
 
 /* =========================
-   🚨 VALIDATION
+   🌐 WEB DETECTION (SOFT)
+   → DOES NOT BLOCK MODELS
 ========================= */
-function isValid(text: any) {
-  if (!text || typeof text !== "string") return false;
-
-  const t = text.toLowerCase();
-  if (t.length < 3) return false;
-
-  if (
-    t.includes("error") ||
-    t.includes("quota") ||
-    t.includes("rate limit") ||
-    t.includes("failed") ||
-    t.includes("unauthorized")
-  ) {
-    return false;
-  }
-
-  return true;
+function needsWeb(message: string) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("news") ||
+    m.includes("latest") ||
+    m.includes("today") ||
+    m.includes("who is") ||
+    m.includes("what is") ||
+    m.includes("price")
+  );
 }
 
 /* =========================
-   🧠 MODEL-BASED INTENT DETECTION
-   (NO RULES, NO HARD CODING)
+   🎬 IMAGE / VIDEO
 ========================= */
-async function detectIntent(message: string) {
-  const prompt = `
-You are an intent classifier.
+function needsImage(message: string) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("image") ||
+    m.includes("picture") ||
+    m.includes("draw") ||
+    m.includes("render") ||
+    m.includes("photo") ||
+    m.includes("create image")
+  );
+}
 
-Classify the message into ONE category:
+/* =========================
+   🔊 TTS
+========================= */
+function needsTTS(message: string) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("speak") ||
+    m.includes("voice") ||
+    m.includes("audio") ||
+    m.includes("read") ||
+    m.includes("tts")
+  );
+}
 
-- greeting
-- identity
-- image
-- tts
-- web
-- reasoning
+/* =========================
+   🧠 SAFE CONTRIBUTOR PROMPT
+   (NO identity restrictions, NO greeting blocking)
+========================= */
+function contributorPrompt(input: string) {
+  return `
+You are one reasoning expert in a multi-model AI system.
+
+You may receive conversational or technical inputs.
 
 Rules:
-- Return ONLY one word
-- No explanation
+- Respond naturally and appropriately
+- Do NOT refuse greetings or casual chat
+- Do NOT mention system identity
+- Provide reasoning or direct answers when possible
 
-Message:
-${message}
+User input:
+${input}
 `;
-
-  const results = await Promise.allSettled([
-    askOpenAI(prompt, []),
-    askGroq(prompt, []),
-    askOllama(prompt, []),
-  ]);
-
-  const votes: string[] = [];
-
-  for (const r of results) {
-    if (r.status === "fulfilled" && typeof r.value === "string") {
-      votes.push(r.value.toLowerCase().trim());
-    }
-  }
-
-  if (votes.length === 0) return "reasoning";
-
-  const freq: Record<string, number> = {};
-
-  for (const v of votes) {
-    freq[v] = (freq[v] || 0) + 1;
-  }
-
-  return Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
 }
 
 /* =========================
-   ⚖️ SCORING SYSTEM
+   ⚖️ MODEL SCORING
 ========================= */
 function score(text: string, model: string) {
   let s = 1;
 
+  if (!text) return 0;
   if (text.length > 200) s += 1;
   if (text.length > 500) s += 1;
   if (text.includes("\n")) s += 0.5;
@@ -111,50 +106,32 @@ function score(text: string, model: string) {
 export async function routeRequest(message: string, context: any) {
   const history = sanitizeHistory(context?.sessionHistory || []);
 
-  /* =========================
-     🧠 STEP 1: INTENT (MODEL VOTING)
-  ========================= */
-  const intent = await detectIntent(message);
+  let webContext = "";
 
   /* =========================
-     🟢 CONVERSATION MODE
+     🌐 WEB (OPTIONAL ENRICHMENT)
   ========================= */
-  if (intent === "greeting") {
-    const reply = await askGroq(
-      `Respond naturally and professionally to this greeting in its language:
-       "${message}"`
-    );
+  try {
+    if (needsWeb(message)) {
+      const search = await searchTavily(message);
 
-    return {
-      type: "text",
-      payload: reply,
-      mode: "conversation",
-    };
+      webContext =
+        search?.answer ||
+        search?.results?.map((r: any) => r.content).join("\n") ||
+        "";
+    }
+  } catch {
+    webContext = "";
   }
 
-  /* =========================
-     🧠 IDENTITY MODE
-  ========================= */
-  if (intent === "identity") {
-    const reply = await askOpenAI(`
-Explain who you are as a system:
-You are a multi-model fusion AI using OpenAI, Groq, and Ollama.
-
-User message:
-${message}
-    `);
-
-    return {
-      type: "text",
-      payload: reply,
-      mode: "identity",
-    };
-  }
+  const enrichedMessage = webContext
+    ? `Context:\n${webContext}\n\nUser:\n${message}`
+    : message;
 
   /* =========================
      🎬 IMAGE MODE
   ========================= */
-  if (intent === "image") {
+  if (needsImage(message)) {
     try {
       const img = await generateImage(message);
 
@@ -178,9 +155,9 @@ ${message}
   }
 
   /* =========================
-     🔊 AUDIO MODE
+     🔊 TTS MODE
   ========================= */
-  if (intent === "tts") {
+  if (needsTTS(message)) {
     try {
       const audio = await generateSpeech(message);
 
@@ -199,50 +176,21 @@ ${message}
   }
 
   /* =========================
-     🌐 WEB ENRICHMENT
+     🧠 PARALLEL MODEL EXECUTION
   ========================= */
-  let webContext = "";
-
-  if (intent === "web") {
-    try {
-      const search = await searchTavily(message);
-
-      webContext =
-        search?.answer ||
-        search?.results?.map((r: any) => r.content).join("\n") ||
-        "";
-    } catch {}
-  }
-
-  const enriched = webContext
-    ? `CONTEXT:\n${webContext}\n\nQUESTION:\n${message}`
-    : message;
-
-  /* =========================
-     🧠 STEP 2: PARALLEL MODELS
-  ========================= */
-  const prompt = `
-You are a reasoning contributor.
-
-Provide useful reasoning only.
-
-Task:
-${enriched}
-`;
-
   const results = await Promise.allSettled([
-    askOpenAI(prompt, history),
-    askGroq(prompt, history),
-    askOllama(prompt, history),
+    askOpenAI(contributorPrompt(enrichedMessage), history),
+    askGroq(contributorPrompt(enrichedMessage), history),
+    askOllama(contributorPrompt(enrichedMessage), history),
   ]);
-
-  const candidates: { text: string; model: string; score: number }[] = [];
 
   const models = ["openai", "groq", "ollama"];
 
+  const valid: { text: string; model: string; score: number }[] = [];
+
   results.forEach((r, i) => {
-    if (r.status === "fulfilled" && isValid(r.value)) {
-      candidates.push({
+    if (r.status === "fulfilled" && typeof r.value === "string") {
+      valid.push({
         text: r.value,
         model: models[i],
         score: score(r.value, models[i]),
@@ -251,48 +199,57 @@ ${enriched}
   });
 
   /* =========================
-     🚨 FALLBACK IF ALL FAIL
+     🧠 GUARANTEED FALLBACK
   ========================= */
-  if (candidates.length === 0) {
-    return {
-      type: "text",
-      payload: "All models are currently unavailable.",
-      mode: "fusion-fail",
-    };
+  if (valid.length === 0) {
+    try {
+      const fallback = await askGroq(enrichedMessage, history);
+      return {
+        type: "text",
+        payload: fallback || "No response available.",
+        mode: "single-fallback",
+      };
+    } catch {
+      return {
+        type: "text",
+        payload: "System temporarily unavailable.",
+        mode: "hard-fail",
+      };
+    }
   }
 
   /* =========================
-     🧠 STEP 3: WEIGHTED SELECTION
+     🧠 WEIGHTED SELECTION
   ========================= */
-  candidates.sort((a, b) => b.score - a.score);
-
-  const top = candidates.slice(0, 3);
+  valid.sort((a, b) => b.score - a.score);
+  const top = valid.slice(0, 3);
 
   const fusionInput = top
-    .map(c => `${c.model.toUpperCase()}:\n${c.text}`)
+    .map(v => `${v.model.toUpperCase()}:\n${v.text}`)
     .join("\n\n---\n\n");
 
   /* =========================
-     🧠 STEP 4: FINAL FUSION
+     🧠 FINAL FUSION (ROBUST)
   ========================= */
   const fusionPrompt = `
 You are a professional AI fusion engine.
 
-Combine multiple reasoning outputs into ONE clear response.
+Task:
+Combine multiple AI outputs into ONE final response.
 
 Rules:
-- remove duplicates
-- resolve contradictions
-- keep professional tone
-- do NOT mention models
+- merge ideas intelligently
+- remove repetition
+- ignore weak or incomplete reasoning
+- produce natural human-like response
 
 Inputs:
 ${fusionInput}
 
-Question:
+User question:
 ${message}
 
-Final Answer:
+Final answer:
 `;
 
   let final = "";
@@ -303,15 +260,17 @@ Final Answer:
     try {
       final = await askOpenAI(fusionPrompt, history);
     } catch {
-      final = await askOllama(fusionPrompt, history);
+      try {
+        final = await askOllama(fusionPrompt, history);
+      } catch {
+        final = valid[0]?.text || "Unable to generate response.";
+      }
     }
   }
 
   return {
     type: "text",
-    payload: isValid(final)
-      ? final
-      : "Unable to generate stable response. Please try again.",
-    mode: "true-fusion",
+    payload: final,
+    mode: "weighted-fusion",
   };
 }
