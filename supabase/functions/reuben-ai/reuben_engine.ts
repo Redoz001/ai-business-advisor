@@ -81,7 +81,34 @@ function sanitizeHistory(history: any[]) {
 }
 
 /* =========================
-   🚀 MAIN ENGINE
+   🧠 CONTRIBUTOR PROMPT (CRITICAL FIX)
+========================= */
+function buildContributorPrompt(message: string) {
+  return `
+You are NOT an assistant.
+
+You are ONE reasoning contributor in a multi-model AI system.
+
+RULES:
+- NO greetings
+- NO self-introduction
+- NO final answer
+- NO assistant tone
+- ONLY facts, reasoning, ideas, steps
+- Keep it short and useful
+
+User request:
+${message}
+
+Output ONLY:
+- bullet points
+- reasoning fragments
+- key insights
+`;
+}
+
+/* =========================
+   🚀 MAIN ENGINE (REAL FUSION ARCHITECTURE)
 ========================= */
 export async function routeRequest(message: string, context: any) {
   const history = sanitizeHistory(context?.sessionHistory || []);
@@ -93,8 +120,6 @@ export async function routeRequest(message: string, context: any) {
        🌐 WEB SEARCH
     ========================= */
     if (needsWeb(message)) {
-      console.log("🌐 Tavily search triggered");
-
       try {
         const search = await searchTavily(message);
 
@@ -103,37 +128,26 @@ export async function routeRequest(message: string, context: any) {
           search?.results?.map((r: any) => r.content).join("\n") ||
           "";
       } catch (err: any) {
-        console.warn("Tavily failed:", err.message);
         webContext = "";
       }
     }
 
     const enrichedMessage = webContext
       ? `
-You are ReuNexus AI (Grounded Mode).
-
-STRICT RULES:
-- Use ONLY the provided context
-- Do NOT use prior knowledge
-- Do NOT hallucinate or assume missing facts
-- If context is insufficient, say: "not found in sources"
-- If asked about who made you always say: Reuben Murimi
-- Be confident, creative, and detailed
+Use context only if relevant.
 
 CONTEXT:
 ${webContext}
 
-QUESTION:
+USER QUESTION:
 ${message}
 `
       : message;
 
     /* =========================
-       🎬 RUNWAY (IMAGE/VIDEO)
+       🎬 IMAGE / VIDEO
     ========================= */
     if (needsRunway(message)) {
-      console.log("🎬 Runway triggered");
-
       try {
         const imageResult = await generateImage(message);
 
@@ -146,9 +160,7 @@ ${message}
               (Array.isArray(imageResult?.output) ? imageResult.output[0] : null) ||
               (Array.isArray(imageResult?.result) ? imageResult.result[0] : null);
 
-        if (!finalUrl || typeof finalUrl !== "string") {
-          throw new Error("No valid image URL returned from Runway");
-        }
+        if (!finalUrl) throw new Error("No image URL");
 
         return {
           type: "image",
@@ -156,24 +168,20 @@ ${message}
           webUsed: false,
           mode: "runway",
         };
-      } catch (err: any) {
-        console.warn("Runway failed:", err.message);
-
+      } catch {
         return {
           type: "text",
           payload: "Image generation failed.",
           webUsed: false,
-          mode: "runway-error",
+          mode: "error",
         };
       }
     }
 
     /* =========================
-       🔊 ELEVENLABS
+       🔊 TEXT TO SPEECH
     ========================= */
     if (needsElevenLabs(message)) {
-      console.log("🔊 ElevenLabs triggered");
-
       try {
         const audioUrl = await generateSpeech(message);
 
@@ -183,96 +191,78 @@ ${message}
           webUsed: false,
           mode: "elevenlabs",
         };
-      } catch (err: any) {
-        console.warn("ElevenLabs failed:", err.message);
-
+      } catch {
         return {
           type: "text",
           payload: "Audio generation failed.",
           webUsed: false,
-          mode: "elevenlabs-error",
+          mode: "error",
         };
       }
     }
 
     /* =========================
-       🧠 FUSION ENGINE (ALL MODELS CONTRIBUTE)
+       🧠 PARALLEL CONTRIBUTORS
+    ========================= */
+
+    const contributorPrompt = buildContributorPrompt(enrichedMessage);
+
+    const [openaiRes, groqRes, ollamaRes] = await Promise.allSettled([
+      askOpenAI(contributorPrompt, history),
+      askGroq(contributorPrompt, history),
+      askOllama(contributorPrompt, history),
+    ]);
+
+    const openai = openaiRes.status === "fulfilled" ? openaiRes.value : "";
+    const groq = groqRes.status === "fulfilled" ? groqRes.value : "";
+    const ollama = ollamaRes.status === "fulfilled" ? ollamaRes.value : "";
+
+    const signals: string[] = [];
+
+    if (openai) signals.push(`OPENAI:\n${openai}`);
+    if (groq) signals.push(`GROQ:\n${groq}`);
+    if (ollama) signals.push(`OLLAMA:\n${ollama}`);
+
+    /* =========================
+       🧠 FUSION ENGINE (FINAL BRAIN)
     ========================= */
 
     let result = "";
 
-    try {
-      // 🔥 RUN ALL MODELS IN PARALLEL
-      const [openaiRes, groqRes, ollamaRes] = await Promise.allSettled([
-        askOpenAI(enrichedMessage, history),
-        askGroq(enrichedMessage, history),
-        askOllama(enrichedMessage, history)
-      ]);
+    if (signals.length === 0) {
+      result =
+        "No AI models responded. Please try again or rephrase your question.";
+    } else {
+      result = await askOpenAI(`
+You are a Fusion Engine.
 
-      const openai = openaiRes.status === "fulfilled" ? openaiRes.value : "";
-      const groq = groqRes.status === "fulfilled" ? groqRes.value : "";
-      const ollama = ollamaRes.status === "fulfilled" ? ollamaRes.value : "";
-
-      // 🧠 COLLECT ALL CONTRIBUTIONS
-      const contributions: string[] = [];
-
-      if (openai) contributions.push(`OPENAI:\n${openai}`);
-      if (groq) contributions.push(`GROQ:\n${groq}`);
-      if (ollama) contributions.push(`OLLAMA:\n${ollama}`);
-
-      // ⚠️ HARD GUARANTEE: always respond
-      if (contributions.length === 0) {
-        result =
-          "I couldn't get responses from any AI model, but I'm still here to help. Please rephrase your question.";
-      } else if (contributions.length === 1) {
-        // only one model worked
-        result = contributions[0];
-      } else {
-        console.log("🧠 Fusion merging", contributions.length, "models");
-
-        // 🧠 PURE FUSION STEP
-        result = await askOpenAI(`
-You are ReuNexus AI Fusion Engine.
-
-Your job is to combine ALL model outputs into ONE final answer.
+Your job is to merge multiple reasoning signals into ONE final answer.
 
 RULES:
-- Use ALL provided information
-- Merge ideas logically
-- Remove duplicates
-- Fix contradictions
+- Combine all useful ideas
+- Remove repetition
+- Resolve contradictions
 - Do NOT mention model names
-- Never mention models in final answer
 - Be clear, structured, and helpful
 
-MODEL OUTPUTS:
-
-${contributions.join("\n\n-------------------\n\n")}
+SIGNALS:
+${signals.join("\n\n---\n\n")}
 
 USER QUESTION:
 ${message}
 
 FINAL ANSWER:
-        `);
-      }
-
-    } catch (err) {
-      console.warn("Fusion engine failed completely");
-
-      result =
-        "I'm having trouble processing that right now, but I can still help if you rephrase your question.";
+      `);
     }
 
     return {
       type: "text",
-      payload: result || "No response generated.",
+      payload: result,
       webUsed: !!webContext,
-      mode: webContext ? "grounded" : "fusion"
+      mode: "fusion",
     };
 
   } catch (err: any) {
-    console.error("routeRequest fatal error:", err);
-
     return {
       type: "text",
       payload: "System error in ReuNexus AI.",
