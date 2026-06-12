@@ -5,12 +5,6 @@ import { searchTavily } from "./providers/tavily.ts";
 
 import { generateImage } from "./providers/runway.ts";
 import { generateSpeech } from "./providers/elevenlabs.ts";
-import {
-  getMemory,
-  saveMemory,
-  saveFeedback,
-  extractLearning
-} from "./ai/memory.ts";
 
 /* =========================
    🌐 DETECTORS
@@ -61,14 +55,10 @@ function needsElevenLabs(message: string) {
 ========================= */
 function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
-
   return history
     .filter(m => m?.content && typeof m.content === "string")
     .slice(-10)
-    .map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
+    .map(m => ({ role: m.role, content: m.content }));
 }
 
 /* =========================
@@ -80,14 +70,55 @@ function isValid(text: any) {
   const t = text.toLowerCase().trim();
 
   if (t.length < 3) return false;
-  if (t.includes("error")) return false;
-  if (t.includes("quota")) return false;
-  if (t.includes("rate limit")) return false;
-  if (t.includes("failed")) return false;
-  if (t.includes("unauthorized")) return false;
+  if (
+    t.includes("error") ||
+    t.includes("quota") ||
+    t.includes("rate limit") ||
+    t.includes("failed") ||
+    t.includes("unauthorized")
+  ) {
+    return false;
+  }
 
   return true;
 }
+
+/* =========================
+   🧠 WEIGHT SCORING SYSTEM
+========================= */
+function scoreAnswer(text: string, model: string) {
+  let score = 1;
+
+  // length quality signal
+  if (text.length > 200) score += 1;
+  if (text.length > 500) score += 1;
+
+  // structure signal
+  if (text.includes("\n")) score += 0.5;
+
+  // model reliability bias (you can tune this)
+  if (model === "openai") score += 1.2;
+  if (model === "groq") score += 1.0;
+  if (model === "ollama") score += 0.9;
+
+  return score;
+}
+
+/* =========================
+   🧠 CONTRIBUTOR PROMPT
+========================= */
+const contributorPrompt = (input: string) => `
+You are a reasoning contributor.
+
+RULES:
+- NO greetings
+- NO assistant identity
+- ONLY reasoning fragments
+- NO final answer
+
+TASK:
+${input}
+`;
 
 /* =========================
    🚀 MAIN ENGINE
@@ -115,13 +146,7 @@ export async function routeRequest(message: string, context: any) {
     }
 
     const enrichedMessage = webContext
-      ? `
-CONTEXT:
-${webContext}
-
-QUESTION:
-${message}
-`
+      ? `CONTEXT:\n${webContext}\n\nQUESTION:\n${message}`
       : message;
 
     /* =========================
@@ -181,71 +206,78 @@ ${message}
     }
 
     /* =========================
-       🧠 CONTRIBUTOR PROMPT
-    ========================= */
-    const contributorPrompt = `
-You are NOT an assistant.
-You are a reasoning contributor only.
-
-RULES:
-- NO greetings
-- NO identity
-- ONLY insights, reasoning, facts
-- NO final answer
-
-User:
-${enrichedMessage}
-`;
-
-    /* =========================
        🧠 PARALLEL MODELS
     ========================= */
-    const [openaiRes, groqRes, ollamaRes] = await Promise.allSettled([
-      askOpenAI(contributorPrompt, history),
-      askGroq(contributorPrompt, history),
-      askOllama(contributorPrompt, history),
+
+    const results = await Promise.allSettled([
+      askOpenAI(contributorPrompt(enrichedMessage), history),
+      askGroq(contributorPrompt(enrichedMessage), history),
+      askOllama(contributorPrompt(enrichedMessage), history),
     ]);
 
-    const openai =
-      openaiRes.status === "fulfilled" && isValid(openaiRes.value)
-        ? openaiRes.value
-        : "";
-
-    const groq =
-      groqRes.status === "fulfilled" && isValid(groqRes.value)
-        ? groqRes.value
-        : "";
-
-    const ollama =
-      ollamaRes.status === "fulfilled" && isValid(ollamaRes.value)
-        ? ollamaRes.value
-        : "";
-
-    const signals: string[] = [];
-
-    if (openai) signals.push(`OPENAI:\n${openai}`);
-    if (groq) signals.push(`GROQ:\n${groq}`);
-    if (ollama) signals.push(`OLLAMA:\n${ollama}`);
+    const labeled = [
+      { model: "openai", res: results[0] },
+      { model: "groq", res: results[1] },
+      { model: "ollama", res: results[2] },
+    ];
 
     /* =========================
-       🧠 SAFE FUSION ENGINE (FIXED)
+       🧠 WEIGHTED SELECTION
     ========================= */
 
-    let result = "";
+    const scored: { text: string; score: number; model: string }[] = [];
+
+    for (const item of labeled) {
+      if (item.res.status === "fulfilled") {
+        const text = item.res.value;
+
+        if (isValid(text)) {
+          scored.push({
+            text,
+            model: item.model,
+            score: scoreAnswer(text, item.model),
+          });
+        }
+      }
+    }
+
+    if (scored.length === 0) {
+      return {
+        type: "text",
+        payload:
+          "All AI models failed or returned weak responses. Please try again.",
+        webUsed: !!webContext,
+        mode: "fusion",
+      };
+    }
+
+    // sort by intelligence score
+    scored.sort((a, b) => b.score - a.score);
+
+    const topSignals = scored
+      .slice(0, 3) // only best contributors
+      .map(
+        s => `${s.model.toUpperCase()} (score ${s.score.toFixed(1)}):\n${s.text}`
+      );
+
+    /* =========================
+       🧠 FINAL FUSION
+    ========================= */
 
     const fusionPrompt = `
-You are a Fusion Engine.
+You are a weighted fusion reasoning engine.
 
-Combine reasoning signals into ONE answer.
+TASK:
+Combine the strongest signals into ONE final answer.
 
 RULES:
-- merge ideas
-- remove repetition
-- ignore errors or noise
-- do NOT mention models
+- prioritize higher-quality reasoning
+- remove duplicates
+- ignore weak or noisy parts
+- no model names in final output
 
 SIGNALS:
-${signals.join("\n\n---\n\n")}
+${topSignals.join("\n\n---\n\n")}
 
 QUESTION:
 ${message}
@@ -253,47 +285,28 @@ ${message}
 FINAL ANSWER:
 `;
 
-    // 🔥 CRITICAL: fallback chain prevents quota crash
+    let result = "";
+
     try {
-      result = await askOpenAI(fusionPrompt, history);
-    } catch (e1) {
-      console.warn("OpenAI fusion failed → fallback Groq");
-
+      result = await askGroq(fusionPrompt, history);
+    } catch {
       try {
-        result = await askGroq(fusionPrompt, history);
-      } catch (e2) {
-        console.warn("Groq fusion failed → fallback Ollama");
-
-        try {
-          result = await askOllama(fusionPrompt, history);
-        } catch (e3) {
-          console.warn("All fusion models failed");
-
-          result =
-            "All AI models are currently unavailable. Please try again.";
-        }
+        result = await askOllama(fusionPrompt, history);
+      } catch {
+        result = await askOpenAI(fusionPrompt, history);
       }
-    }
-
-    /* =========================
-       🧠 FINAL SAFETY
-    ========================= */
-    if (!isValid(result)) {
-      result =
-        "I couldn't generate a valid response. Please try rephrasing your question.";
     }
 
     return {
       type: "text",
       payload: result,
       webUsed: !!webContext,
-      mode: "fusion",
+      mode: "weighted-fusion",
     };
-
   } catch (err) {
     return {
       type: "text",
-      payload: "System error in ReuNexus AI.",
+      payload: "System error in weighted fusion engine.",
       webUsed: false,
       mode: "error",
     };
