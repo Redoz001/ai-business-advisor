@@ -6,58 +6,49 @@ import { generateImage } from "./providers/runway.ts";
 import { generateSpeech } from "./providers/elevenlabs.ts";
 
 /* =========================
-   🧠 CONVERSATION MODE FIX
+   🧠 INTENT CLASSIFIER
 ========================= */
-function isConversation(message: string) {
+
+function getIntent(message: string) {
   const msg = message.toLowerCase().trim();
 
-  return (
-    ["hi", "hello", "hey", "yo", "sup"].includes(msg) ||
-    msg.includes("who are you") ||
-    msg.includes("what are you") ||
-    msg.includes("help")
-  );
-}
+  if (["hi", "hello", "hey", "yo"].includes(msg)) return "greeting";
 
-/* =========================
-   🌐 DETECTORS
-========================= */
-function needsWeb(message: string) {
-  const msg = message.toLowerCase();
-  return (
-    msg.includes("today") ||
-    msg.includes("latest") ||
-    msg.includes("news") ||
-    msg.includes("price") ||
-    msg.includes("who is") ||
-    msg.includes("what is")
-  );
-}
+  if (msg.includes("who are you") || msg.includes("what are you"))
+    return "identity";
 
-function needsRunway(message: string) {
-  const msg = message.toLowerCase();
-  return (
+  if (
     msg.includes("image") ||
+    msg.includes("picture") ||
     msg.includes("draw") ||
-    msg.includes("photo") ||
-    msg.includes("generate image") ||
-    msg.includes("video")
-  );
-}
+    msg.includes("generate image")
+  )
+    return "image";
 
-function needsElevenLabs(message: string) {
-  const msg = message.toLowerCase();
-  return (
+  if (
     msg.includes("speak") ||
     msg.includes("voice") ||
     msg.includes("audio") ||
-    msg.includes("read")
-  );
+    msg.includes("tts")
+  )
+    return "tts";
+
+  if (
+    msg.includes("today") ||
+    msg.includes("latest") ||
+    msg.includes("news") ||
+    msg.includes("what is") ||
+    msg.includes("who is")
+  )
+    return "web";
+
+  return "reasoning";
 }
 
 /* =========================
-   🧹 HISTORY
+   🧹 HISTORY CLEANER
 ========================= */
+
 function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
   return history
@@ -67,204 +58,226 @@ function sanitizeHistory(history: any[]) {
 }
 
 /* =========================
-   🧠 VALIDATION (FILTER BAD OUTPUTS)
+   🚨 VALIDATION (IGNORE BAD OUTPUTS)
 ========================= */
+
 function isValid(text: any) {
   if (!text || typeof text !== "string") return false;
 
   const t = text.toLowerCase();
-  if (t.length < 3) return false;
 
-  return !(
-    t.includes("error") ||
-    t.includes("quota") ||
-    t.includes("rate limit") ||
-    t.includes("failed") ||
-    t.includes("unauthorized")
+  return (
+    t.length > 3 &&
+    !t.includes("error") &&
+    !t.includes("quota") &&
+    !t.includes("rate limit") &&
+    !t.includes("failed") &&
+    !t.includes("unauthorized")
   );
 }
 
 /* =========================
-   ⚖️ WEIGHT SCORING
+   ⚡ WEIGHT SCORING
 ========================= */
-function scoreAnswer(text: string, model: string) {
-  let score = 1;
 
-  if (text.length > 200) score += 1;
-  if (text.length > 500) score += 1;
-  if (text.includes("\n")) score += 0.5;
+function score(text: string, model: string) {
+  let s = 1;
 
-  if (model === "openai") score += 1.2;
-  if (model === "groq") score += 1.0;
-  if (model === "ollama") score += 0.9;
+  if (text.length > 200) s += 1;
+  if (text.length > 500) s += 1;
+  if (text.includes("\n")) s += 0.5;
 
-  return score;
+  if (model === "openai") s += 1.2;
+  if (model === "groq") s += 1.0;
+  if (model === "ollama") s += 0.9;
+
+  return s;
 }
+
+/* =========================
+   🧠 CONTRIBUTOR PROMPT
+========================= */
+
+const contributorPrompt = (input: string) => `
+You are a reasoning contributor.
+
+RULES:
+- no greetings
+- no identity
+- only useful reasoning
+- do NOT give final polished answer
+
+TASK:
+${input}
+`;
 
 /* =========================
    🚀 MAIN ENGINE
 ========================= */
+
 export async function routeRequest(message: string, context: any) {
   const history = sanitizeHistory(context?.sessionHistory || []);
+  const intent = getIntent(message);
 
   /* =========================
-     🧠 1. CONVERSATION LAYER (FIX YOUR BUG)
+     🟢 GREETING / CHAT MODE
   ========================= */
-  if (isConversation(message)) {
+
+  if (intent === "greeting") {
     return {
       type: "text",
       payload:
-        "Hey 👋 I'm ReuNexus AI — a multi-model fusion system using OpenAI, Groq, and Ollama. Ask me anything!",
-      webUsed: false,
+        "Hey 👋 I'm ReuNexus AI — a multi-model fusion system (OpenAI, Groq, Ollama). Ask me anything.",
       mode: "conversation",
+      webUsed: false,
     };
   }
 
-  let webContext = "";
-
-  /* =========================
-     🌐 WEB SEARCH
-  ========================= */
-  if (needsWeb(message)) {
-    try {
-      const search = await searchTavily(message);
-      webContext =
-        search?.answer ||
-        search?.results?.map((r: any) => r.content).join("\n") ||
-        "";
-    } catch {}
+  if (intent === "identity") {
+    return {
+      type: "text",
+      payload: "I was created by Reuben Murimi.",
+      mode: "identity",
+      webUsed: false,
+    };
   }
 
-  const enrichedMessage = webContext
-    ? `CONTEXT:\n${webContext}\n\nQUESTION:\n${message}`
-    : message;
-
   /* =========================
-     🎬 IMAGE GENERATION
+     🎬 IMAGE MODE
   ========================= */
-  if (needsRunway(message)) {
+
+  if (intent === "image") {
     try {
       const img = await generateImage(message);
 
       const url =
         typeof img === "string"
           ? img
-          : img?.output_url ||
-            img?.url ||
-            img?.payload ||
-            (Array.isArray(img?.output) ? img.output[0] : null);
+          : img?.output_url || img?.url || img?.payload;
 
       if (!url) throw new Error();
 
-      return {
-        type: "image",
-        payload: url,
-        webUsed: false,
-        mode: "runway",
-      };
+      return { type: "image", payload: url, mode: "image" };
     } catch {
-      return {
-        type: "text",
-        payload: "Image generation failed.",
-        webUsed: false,
-        mode: "error",
-      };
+      return { type: "text", payload: "Image failed.", mode: "error" };
     }
   }
 
   /* =========================
-     🔊 TTS
+     🔊 TTS MODE
   ========================= */
-  if (needsElevenLabs(message)) {
+
+  if (intent === "tts") {
     try {
       const audio = await generateSpeech(message);
-
-      return {
-        type: "audio",
-        payload: audio,
-        webUsed: false,
-        mode: "elevenlabs",
-      };
+      return { type: "audio", payload: audio, mode: "tts" };
     } catch {
-      return {
-        type: "text",
-        payload: "Audio generation failed.",
-        webUsed: false,
-        mode: "error",
-      };
+      return { type: "text", payload: "Audio failed.", mode: "error" };
     }
   }
 
   /* =========================
-     🧠 CONTRIBUTOR PROMPT (SAFE)
+     🌐 WEB MODE
   ========================= */
-  const contributorPrompt = `
-You are a reasoning contributor.
 
-RULES:
-- NO greetings unless asked
-- NO identity
-- ONLY reasoning fragments
-- DO NOT refuse simple input
-- DO NOT ask for context
+  let webContext = "";
 
-TASK:
-${enrichedMessage}
-`;
+  if (intent === "web") {
+    try {
+      const search = await searchTavily(message);
+
+      webContext =
+        search?.answer ||
+        search?.results?.map((r: any) => r.content).join("\n") ||
+        "";
+    } catch {
+      webContext = "";
+    }
+  }
+
+  const enriched = webContext
+    ? `CONTEXT:\n${webContext}\n\nQUESTION:\n${message}`
+    : message;
 
   /* =========================
-     ⚡ PARALLEL EXECUTION
+     🧠 PARALLEL MODELS (FUSION CORE)
   ========================= */
-  const [openaiR, groqR, ollamaR] = await Promise.allSettled([
-    askOpenAI(contributorPrompt, history),
-    askGroq(contributorPrompt, history),
-    askOllama(contributorPrompt, history),
+
+  const results = await Promise.allSettled([
+    askOpenAI(contributorPrompt(enriched), history),
+    askGroq(contributorPrompt(enriched), history),
+    askOllama(contributorPrompt(enriched), history),
   ]);
 
-  const contributions: any[] = [];
+  const labeled = [
+    { model: "openai", res: results[0] },
+    { model: "groq", res: results[1] },
+    { model: "ollama", res: results[2] },
+  ];
 
-  const add = (res: any, model: string) => {
-    if (res.status === "fulfilled" && isValid(res.value)) {
-      contributions.push({
-        model,
-        text: res.value,
-        score: scoreAnswer(res.value, model),
-      });
+  /* =========================
+     🧠 FILTER + SCORE
+  ========================= */
+
+  const candidates: { text: string; model: string; score: number }[] = [];
+
+  for (const item of labeled) {
+    if (item.res.status === "fulfilled") {
+      const text = item.res.value;
+
+      if (isValid(text)) {
+        candidates.push({
+          text,
+          model: item.model,
+          score: score(text, item.model),
+        });
+      }
     }
-  };
+  }
 
-  add(openaiR, "openai");
-  add(groqR, "groq");
-  add(ollamaR, "ollama");
+  /* =========================
+     🧠 FALLBACK IF ALL FAIL
+  ========================= */
 
-  if (contributions.length === 0) {
+  if (candidates.length === 0) {
     return {
       type: "text",
-      payload: "All models failed. Please try again.",
+      payload: "No AI models returned a valid response. Try again.",
+      mode: "fusion-fail",
       webUsed: !!webContext,
-      mode: "fusion-failed",
     };
   }
 
   /* =========================
-     🧠 WEIGHTED SELECTION
+     🧠 PICK BEST SIGNALS
   ========================= */
-  contributions.sort((a, b) => b.score - a.score);
 
-  const top = contributions.slice(0, 3);
+  candidates.sort((a, b) => b.score - a.score);
+
+  const top = candidates.slice(0, 3);
+
+  const fusionInput = top
+    .map(c => `${c.model.toUpperCase()}:\n${c.text}`)
+    .join("\n\n---\n\n");
+
+  /* =========================
+     🧠 FINAL FUSION STEP
+  ========================= */
 
   const fusionPrompt = `
-You are a Fusion Brain.
+You are a fusion reasoning engine.
 
-Combine all reasoning into ONE final response.
+TASK:
+Combine all model outputs into ONE final answer.
 
 RULES:
-- merge ideas
+- merge best ideas
 - remove repetition
-- ignore noise or errors
-- no model names
+- ignore weak or broken parts
+- do NOT mention models
 
-${top.map(t => `${t.model.toUpperCase()}:\n${t.text}`).join("\n\n---\n\n")}
+INPUTS:
+${fusionInput}
 
 QUESTION:
 ${message}
@@ -272,30 +285,24 @@ ${message}
 FINAL ANSWER:
 `;
 
-  /* =========================
-     🧠 FINAL FUSION FALLBACK CHAIN
-  ========================= */
-
-  let result = "";
+  let final = "";
 
   try {
-    result = await askGroq(fusionPrompt, history);
+    final = await askGroq(fusionPrompt, history);
   } catch {
     try {
-      result = await askOpenAI(fusionPrompt, history);
+      final = await askOpenAI(fusionPrompt, history);
     } catch {
-      try {
-        result = await askOllama(fusionPrompt, history);
-      } catch {
-        result = top[0]?.text || "No valid response generated.";
-      }
+      final = await askOllama(fusionPrompt, history);
     }
   }
 
   return {
     type: "text",
-    payload: result,
-    webUsed: !!webContext,
+    payload: isValid(final)
+      ? final
+      : "I couldn't generate a strong response. Please rephrase.",
     mode: "weighted-fusion",
+    webUsed: !!webContext,
   };
 }
