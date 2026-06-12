@@ -1,5 +1,6 @@
 import { askGroq } from "./providers/groq.ts";
 import { askOpenAI } from "./providers/openai.ts";
+import { askOllama } from "./providers/ollama.ts";
 import { searchTavily } from "./providers/tavily.ts";
 
 import { generateImage } from "./providers/runway.ts";
@@ -10,6 +11,7 @@ import {
   saveFeedback,
   extractLearning
 } from "./ai/memory.ts";
+
 /* =========================
    🌐 WEB DETECTOR
 ========================= */
@@ -61,36 +63,6 @@ function needsElevenLabs(message: string) {
     msg.includes("tts") ||
     msg.includes("elevenlabs")
   );
-}
-
-/* =========================
-   🧠 SMART ROUTER (NO KEYWORDS DEPENDENCY)
-========================= */
-async function routeModel(message: string): Promise<"openai" | "groq"> {
-  try {
-    const decision = await askGroq(`
-You are an AI routing engine.
-
-Decide which model should handle this request.
-
-RULES:
-- openai → complex reasoning, coding, debugging, architecture, deep explanation, analysis, planning
-- groq → simple Q&A, short answers, casual chat, basic info
-
-Return ONLY valid JSON:
-{ "model": "openai" | "groq", "confidence": 0-1 }
-
-User message:
-${message}
-`);
-
-    const parsed = JSON.parse(decision);
-
-    if (parsed?.model === "openai") return "openai";
-    return "groq";
-  } catch {
-    return "groq";
-  }
 }
 
 /* =========================
@@ -224,30 +196,74 @@ ${message}
     }
 
     /* =========================
-       🧠 SMART MODEL ROUTING
+       🧠 FUSION ENGINE (ALL MODELS CONTRIBUTE)
     ========================= */
-    const model = await routeModel(message);
 
     let result = "";
 
     try {
-      if (model === "openai") {
-        console.log("🧠 OpenAI Brain");
-        result = await askOpenAI(enrichedMessage, history);
+      const [openaiRes, groqRes, ollamaRes] = await Promise.allSettled([
+        askOpenAI(enrichedMessage, history),
+        askGroq(enrichedMessage, history),
+        askOllama(enrichedMessage, history)
+      ]);
+
+      const openai =
+        openaiRes.status === "fulfilled" ? openaiRes.value : "";
+
+      const groq =
+        groqRes.status === "fulfilled" ? groqRes.value : "";
+
+      const ollama =
+        ollamaRes.status === "fulfilled" ? ollamaRes.value : "";
+
+      const available = [];
+
+      if (openai) available.push(`OPENAI:\n${openai}`);
+      if (groq) available.push(`GROQ:\n${groq}`);
+      if (ollama) available.push(`OLLAMA:\n${ollama}`);
+
+      if (available.length === 0) {
+        result =
+          "I couldn't get responses from any AI model, but I'm still here to help. Please rephrase your question.";
       } else {
-        console.log("⚡ Groq Brain");
-        result = await askGroq(enrichedMessage, history);
+        console.log("🧠 Fusion merging", available.length, "models");
+
+        result = await askOpenAI(`
+You are ReuNexus AI Fusion Engine.
+
+Your job is to combine multiple AI outputs into ONE final answer.
+
+RULES:
+- Use only available information
+- Remove repetition
+- Resolve contradictions logically
+- Be clear, structured, and helpful
+- Never mention models in final answer
+
+MODEL OUTPUTS:
+
+${available.join("\n\n")}
+
+USER QUESTION:
+${message}
+
+FINAL ANSWER:
+        `);
       }
+
     } catch (err) {
-      console.warn("Primary brain failed, switching fallback...");
-      result = await askGroq(enrichedMessage, history);
+      console.warn("Fusion engine failed completely");
+
+      result =
+        "I'm having trouble processing that right now, but I can still help if you rephrase your question.";
     }
 
     return {
       type: "text",
       payload: result || "No response generated.",
       webUsed: !!webContext,
-      mode: webContext ? "grounded" : "llm",
+      mode: webContext ? "grounded" : "fusion"
     };
 
   } catch (err: any) {
