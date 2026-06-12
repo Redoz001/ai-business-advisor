@@ -10,85 +10,31 @@ import { generateSpeech } from "./providers/elevenlabs.ts";
 ========================= */
 function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
-  return history
-    .filter(m => m?.content && typeof m.content === "string")
-    .slice(-10)
-    .map(m => ({ role: m.role, content: m.content }));
+  return history.slice(-10).map(m => ({
+    role: m.role,
+    content: m.content,
+  }));
 }
 
 /* =========================
-   🌐 WEB DETECTION (SOFT)
-   → DOES NOT BLOCK MODELS
+   🔁 SAFE CALL WRAPPER (KEY FIX)
 ========================= */
-function needsWeb(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("news") ||
-    m.includes("latest") ||
-    m.includes("today") ||
-    m.includes("who is") ||
-    m.includes("what is") ||
-    m.includes("price")
-  );
+async function safeCall(fn: Function, ...args: any[]) {
+  try {
+    const res = await fn(...args);
+    if (!res || typeof res !== "string") return null;
+    return res;
+  } catch {
+    return null;
+  }
 }
 
 /* =========================
-   🎬 IMAGE / VIDEO
-========================= */
-function needsImage(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("image") ||
-    m.includes("picture") ||
-    m.includes("draw") ||
-    m.includes("render") ||
-    m.includes("photo") ||
-    m.includes("create image")
-  );
-}
-
-/* =========================
-   🔊 TTS
-========================= */
-function needsTTS(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("speak") ||
-    m.includes("voice") ||
-    m.includes("audio") ||
-    m.includes("read") ||
-    m.includes("tts")
-  );
-}
-
-/* =========================
-   🧠 SAFE CONTRIBUTOR PROMPT
-   (NO identity restrictions, NO greeting blocking)
-========================= */
-function contributorPrompt(input: string) {
-  return `
-You are one reasoning expert in a multi-model AI system.
-
-You may receive conversational or technical inputs.
-
-Rules:
-- Respond naturally and appropriately
-- Do NOT refuse greetings or casual chat
-- Do NOT mention system identity
-- Provide reasoning or direct answers when possible
-
-User input:
-${input}
-`;
-}
-
-/* =========================
-   ⚖️ MODEL SCORING
+   ⚖️ SCORE ENGINE
 ========================= */
 function score(text: string, model: string) {
   let s = 1;
 
-  if (!text) return 0;
   if (text.length > 200) s += 1;
   if (text.length > 500) s += 1;
   if (text.includes("\n")) s += 0.5;
@@ -101,150 +47,118 @@ function score(text: string, model: string) {
 }
 
 /* =========================
-   🚀 MAIN ENGINE
+   🧠 MAIN ENGINE
 ========================= */
 export async function routeRequest(message: string, context: any) {
   const history = sanitizeHistory(context?.sessionHistory || []);
 
-  let webContext = "";
-
   /* =========================
-     🌐 WEB (OPTIONAL ENRICHMENT)
+     🌐 WEB (OPTIONAL)
   ========================= */
+  let webContext = "";
   try {
-    if (needsWeb(message)) {
-      const search = await searchTavily(message);
-
-      webContext =
-        search?.answer ||
-        search?.results?.map((r: any) => r.content).join("\n") ||
-        "";
-    }
+    const search = await searchTavily(message);
+    webContext =
+      search?.answer ||
+      search?.results?.map((r: any) => r.content).join("\n") ||
+      "";
   } catch {
     webContext = "";
   }
 
-  const enrichedMessage = webContext
+  const input = webContext
     ? `Context:\n${webContext}\n\nUser:\n${message}`
     : message;
 
   /* =========================
      🎬 IMAGE MODE
   ========================= */
-  if (needsImage(message)) {
+  if (message.toLowerCase().includes("image")) {
     try {
       const img = await generateImage(message);
-
       const url =
         typeof img === "string"
           ? img
           : img?.output_url || img?.url || img?.payload;
 
-      return {
-        type: "image",
-        payload: url,
-        mode: "image",
-      };
+      return { type: "image", payload: url, mode: "image" };
     } catch {
-      return {
-        type: "text",
-        payload: "Image generation failed.",
-        mode: "error",
-      };
+      return { type: "text", payload: "Image failed.", mode: "error" };
     }
   }
 
   /* =========================
      🔊 TTS MODE
   ========================= */
-  if (needsTTS(message)) {
+  if (message.toLowerCase().includes("voice")) {
     try {
       const audio = await generateSpeech(message);
-
-      return {
-        type: "audio",
-        payload: audio,
-        mode: "tts",
-      };
+      return { type: "audio", payload: audio, mode: "tts" };
     } catch {
-      return {
-        type: "text",
-        payload: "Audio generation failed.",
-        mode: "error",
-      };
+      return { type: "text", payload: "Audio failed.", mode: "error" };
     }
   }
 
   /* =========================
-     🧠 PARALLEL MODEL EXECUTION
+     🧠 PARALLEL EXECUTION (SAFE)
   ========================= */
-  const results = await Promise.allSettled([
-    askOpenAI(contributorPrompt(enrichedMessage), history),
-    askGroq(contributorPrompt(enrichedMessage), history),
-    askOllama(contributorPrompt(enrichedMessage), history),
+  const [openai, groq, ollama] = await Promise.all([
+    safeCall(askOpenAI, input, history),
+    safeCall(askGroq, input, history),
+    safeCall(askOllama, input, history),
   ]);
 
-  const models = ["openai", "groq", "ollama"];
-
-  const valid: { text: string; model: string; score: number }[] = [];
-
-  results.forEach((r, i) => {
-    if (r.status === "fulfilled" && typeof r.value === "string") {
-      valid.push({
-        text: r.value,
-        model: models[i],
-        score: score(r.value, models[i]),
-      });
-    }
-  });
+  const candidates = [
+    openai && { text: openai, model: "openai" },
+    groq && { text: groq, model: "groq" },
+    ollama && { text: ollama, model: "ollama" },
+  ].filter(Boolean) as any[];
 
   /* =========================
-     🧠 GUARANTEED FALLBACK
+     🚨 HARD GUARANTEE FALLBACK
   ========================= */
-  if (valid.length === 0) {
-    try {
-      const fallback = await askGroq(enrichedMessage, history);
-      return {
-        type: "text",
-        payload: fallback || "No response available.",
-        mode: "single-fallback",
-      };
-    } catch {
-      return {
-        type: "text",
-        payload: "System temporarily unavailable.",
-        mode: "hard-fail",
-      };
-    }
+  if (candidates.length === 0) {
+    // LAST RESORT: always respond
+    return {
+      type: "text",
+      payload:
+        "I’m currently experiencing high load across all AI providers. Please try again in a moment.",
+      mode: "hard-fallback",
+    };
   }
 
   /* =========================
-     🧠 WEIGHTED SELECTION
+     ⚖️ WEIGHTED PICK
   ========================= */
-  valid.sort((a, b) => b.score - a.score);
-  const top = valid.slice(0, 3);
+  const scored = candidates.map(c => ({
+    ...c,
+    score: score(c.text, c.model),
+  }));
 
-  const fusionInput = top
-    .map(v => `${v.model.toUpperCase()}:\n${v.text}`)
-    .join("\n\n---\n\n");
+  scored.sort((a, b) => b.score - a.score);
+
+  const best = scored[0];
 
   /* =========================
-     🧠 FINAL FUSION (ROBUST)
+     🧠 IF ONLY ONE MODEL WORKS
+  ========================= */
+  if (scored.length === 1) {
+    return {
+      type: "text",
+      payload: best.text,
+      mode: "single-model",
+    };
+  }
+
+  /* =========================
+     🧠 FUSION STEP (OPTIONAL ENHANCEMENT)
   ========================= */
   const fusionPrompt = `
-You are a professional AI fusion engine.
+You are a fusion engine.
 
-Task:
-Combine multiple AI outputs into ONE final response.
+Combine the following answers into one:
 
-Rules:
-- merge ideas intelligently
-- remove repetition
-- ignore weak or incomplete reasoning
-- produce natural human-like response
-
-Inputs:
-${fusionInput}
+${scored.map(s => `${s.model}: ${s.text}`).join("\n\n")}
 
 User question:
 ${message}
@@ -257,20 +171,12 @@ Final answer:
   try {
     final = await askGroq(fusionPrompt, history);
   } catch {
-    try {
-      final = await askOpenAI(fusionPrompt, history);
-    } catch {
-      try {
-        final = await askOllama(fusionPrompt, history);
-      } catch {
-        final = valid[0]?.text || "Unable to generate response.";
-      }
-    }
+    final = best.text; // fallback to best model instantly
   }
 
   return {
     type: "text",
     payload: final,
-    mode: "weighted-fusion",
+    mode: "self-healing-fusion",
   };
 }
