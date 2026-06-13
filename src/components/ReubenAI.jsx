@@ -198,20 +198,25 @@ const sendMessage = async () => {
     ]);
 
     /* AUTO TITLE GENERATION (ONLY FIRST MESSAGE) */
-    if (isNewChat) {
-      const title =
-        text.length > 50
-          ? text.slice(0, 50) + "..."
-          : text;
+   const { data: session } = await supabase
+  .from("chat_sessions")
+  .select("title")
+  .eq("id", chatId)
+  .single();
 
-      const { error } = await supabase
-        .from("chat_sessions")
-        .update({ title })
-        .eq("id", chatId);
+if (session?.title === "New Chat") {
+  const title =
+    text.length > 50
+      ? text.slice(0, 50) + "..."
+      : text;
 
-      if (error) console.error(error);
-    }
+  const { error } = await supabase
+    .from("chat_sessions")
+    .update({ title })
+    .eq("id", chatId);
 
+  if (error) console.error(error);
+}
     const session = await supabase.auth.getSession();
     const token = session?.data?.session?.access_token;
 
