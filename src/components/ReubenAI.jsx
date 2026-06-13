@@ -155,20 +155,7 @@ const createChat = async () => {
 
   if (error) throw error;
 
-  setActiveChat?.(data.id);
   return data.id;
-};
-
-/* TITLE GENERATOR */
-const generateTitle = async (message) => {
-  const res = await fetch("/api/generate-title", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-
-  const data = await res.json();
-  return data.title;
 };
 
 /* SEND MESSAGE */
@@ -185,10 +172,13 @@ const sendMessage = async () => {
 
   try {
     let chatId = activeChat;
+    let isNewChat = false;
 
-    const isNewChat = !chatId;
-
-    if (!chatId) chatId = await createChat();
+    if (!chatId) {
+      chatId = await createChat();
+      setActiveChat(chatId);
+      isNewChat = true;
+    }
 
     const userMsg = createMessage("user", text);
 
@@ -207,20 +197,20 @@ const sendMessage = async () => {
       assistantMsg,
     ]);
 
-    /* ✅ AUTO TITLE GENERATION (ONLY FIRST MESSAGE) */
+    /* AUTO TITLE GENERATION (ONLY FIRST MESSAGE) */
     if (isNewChat) {
-  const title =
-    text.length > 50
-      ? text.slice(0, 50) + "..."
-      : text;
+      const title =
+        text.length > 50
+          ? text.slice(0, 50) + "..."
+          : text;
 
-  const { error } = await supabase
-    .from("chat_sessions")
-    .update({ title })
-    .eq("id", chatId);
+      const { error } = await supabase
+        .from("chat_sessions")
+        .update({ title })
+        .eq("id", chatId);
 
-  if (error) console.error(error);
-}
+      if (error) console.error(error);
+    }
 
     const session = await supabase.auth.getSession();
     const token = session?.data?.session?.access_token;
@@ -247,55 +237,56 @@ const sendMessage = async () => {
     const data = raw ? JSON.parse(raw) : null;
 
     const responseText = data?.payload || "";
-      /* STREAM RESPONSE */
-      streamText((val) => {
-        setMessages((prev) => {
-          const copy = [...prev];
-          const idx = copy.findIndex(
-            (m) => m.id === assistantId
-          );
 
-          if (idx !== -1) {
-            copy[idx] = {
-              ...copy[idx],
-              content: val,
-            };
-          }
+    /* STREAM RESPONSE */
+    streamText((val) => {
+      setMessages((prev) => {
+        const copy = [...prev];
+        const idx = copy.findIndex(
+          (m) => m.id === assistantId
+        );
 
-          return copy;
-        });
-      }, responseText);
+        if (idx !== -1) {
+          copy[idx] = {
+            ...copy[idx],
+            content: val,
+          };
+        }
 
-      /* SAVE */
-      setTimeout(async () => {
-        await supabase.from("chat_messages").insert([
-          {
-            session_id: chatId,
-            role: "user",
-            content: text,
-          },
-          {
-            session_id: chatId,
-            role: "assistant",
-            content: responseText,
-          },
-        ]);
-      }, responseText.length * 12 + 300);
-    } catch (err) {
-      setError(err.message);
+        return copy;
+      });
+    }, responseText);
 
-      setMessages((prev) => [
-        ...prev,
-        createMessage(
-          "assistant",
-          "⚠️ " + err.message
-        ),
+    /* SAVE */
+    setTimeout(async () => {
+      await supabase.from("chat_messages").insert([
+        {
+          session_id: chatId,
+          role: "user",
+          content: text,
+        },
+        {
+          session_id: chatId,
+          role: "assistant",
+          content: responseText,
+        },
       ]);
-    } finally {
-      setLoading(false);
-      abortRef.current = null;
-    }
-  };
+    }, responseText.length * 12 + 300);
+  } catch (err) {
+    setError(err.message);
+
+    setMessages((prev) => [
+      ...prev,
+      createMessage(
+        "assistant",
+        "⚠️ " + err.message
+      ),
+    ]);
+  } finally {
+    setLoading(false);
+    abortRef.current = null;
+  }
+};
 
   const stop = () => {
     abortRef.current?.abort();
