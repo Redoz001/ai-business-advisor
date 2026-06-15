@@ -2,7 +2,7 @@ import { supabase } from "./lib/supabase.js";
 
 /**
  * =========================================
- * REUBEN AI SERVICE
+ * REUNEXUS AI SERVICE
  * Supports:
  * - OpenAI
  * - Groq
@@ -96,7 +96,7 @@ export async function sendMessageToAI({
               });
 
             fullText += chunk;
-
+R
             yield {
               chunk,
               fullText,
@@ -140,7 +140,7 @@ export async function sendMessageToAI({
       stream: false,
       error: true,
       reply:
-        "Something went wrong while connecting to ReubenAI.",
+        "Something went wrong while connecting to ReuNexus AI.",
       message: error.message,
     };
   }
