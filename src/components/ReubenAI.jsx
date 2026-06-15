@@ -315,11 +315,7 @@ const showWelcome = messages.length === 0;
 return (
   <div className="flex flex-col h-screen bg-zinc-950 text-white overflow-hidden">
 
-{/* HEADER */}
-<div className="p-3 border-b border-zinc-800 flex justify-between shrink-0">
-  <div className="font-bold">REUNEXUS</div>
-  )
-</div>
+
    
     {/* CHAT AREA */}
     <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col">
