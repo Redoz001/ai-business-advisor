@@ -303,114 +303,107 @@ if (chatSession?.title === "New Chat") {
     setLoading(false);
   };
 
-  /* WELCOME */
-  const welcome = useMemo(() => {
-    return WELCOME_MESSAGES[
-      Math.floor(
-        Math.random() * WELCOME_MESSAGES.length
-      )
-    ];
-  }, [chatKey]);
+ /* WELCOME */
+const welcome = useMemo(() => {
+  return WELCOME_MESSAGES[
+    Math.floor(Math.random() * WELCOME_MESSAGES.length)
+  ];
+}, [chatKey]);
 
-  const showWelcome = messages.length === 0;
+const showWelcome = messages.length === 0;
 
-  return (
-    <div className="flex flex-col h-full bg-zinc-950 text-white">
+return (
+  <div className="flex flex-col h-full bg-zinc-950 text-white">
 
-     
+    {/* CHAT AREA */}
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col">
 
-      {/* CHAT AREA */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col">
+      {/* WELCOME SCREEN */}
+      {showWelcome && (
+        <div className="flex-1 flex items-center justify-center text-center">
+          <div className="max-w-md">
+            <h2 className="text-xl font-bold mb-3">
+              Hey {user?.email?.split("@")[0] || "there"} 👋
+            </h2>
 
-        {/* WELCOME SCREEN */}
-        {showWelcome && (
-          <div className="flex-1 flex items-center justify-center text-center">
-            <div className="max-w-md">
-              <h2 className="text-xl font-bold mb-3">
-                Hey {user?.email?.split("@")[0] ||
-                  "there"} 👋
-              </h2>
-
-              <p className="text-zinc-400">
-                {welcome}
-              </p>
-            </div>
+            <p className="text-zinc-400">
+              {welcome}
+            </p>
           </div>
-        )}
-
-        {/* MESSAGES */}
-        <div className="space-y-3">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`p-3 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-                m.role === "user"
-                  ? "bg-green-400 text-black ml-auto"
-                  : "bg-zinc-900"
-              }`}
-            >
-              <ReactMarkdown
-                components={{
-                  code({
-                    inline,
-                    className,
-                    children,
-                  }) {
-                    return !inline ? (
-                      <CodeBlock className={className}>
-                        {children}
-                      </CodeBlock>
-                    ) : (
-                      <code className="bg-zinc-800 px-1 rounded text-sm">
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {m.content}
-              </ReactMarkdown>
-            </div>
-          ))}
-        </div>
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* ERROR */}
-      {error && (
-        <div className="px-3 text-red-400 text-sm">
-          {error}
         </div>
       )}
 
-    {/* INPUT */}
-<div className="p-3 border-t border-zinc-800 flex gap-2">
-  <input
-    className="flex-1 p-2 bg-zinc-900 rounded outline-none"
-    value={input}
-    onChange={(e) => setInput(e.target.value)}
-    onKeyDown={(e) =>
-      e.key === "Enter" && sendMessage()
-    }
-    placeholder="Ask anything..."
-  />
+      {/* MESSAGES */}
+      <div className="space-y-3">
+        {messages.map((m) => (
+          <div
+            key={m.id}
+            className={`p-3 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+              m.role === "user"
+                ? "bg-green-400 text-black ml-auto"
+                : "bg-zinc-900"
+            }`}
+          >
+            <ReactMarkdown
+              components={{
+                code({ inline, className, children }) {
+                  return !inline ? (
+                    <CodeBlock className={className}>
+                      {children}
+                    </CodeBlock>
+                  ) : (
+                    <code className="bg-zinc-800 px-1 rounded text-sm">
+                      {children}
+                    </code>
+                  );
+                },
+              }}
+            >
+              {m.content}
+            </ReactMarkdown>
+          </div>
+        ))}
+      </div>
 
-    {loading && (
-      <button
-        onClick={stop}
-        className="text-red-400 text-sm px-3"
-      >
-        Stop
-      </button>
+      <div ref={bottomRef} />
+    </div>
+
+    {/* ERROR */}
+    {error && (
+      <div className="px-3 text-red-400 text-sm">
+        {error}
+      </div>
     )}
+
+    {/* INPUT */}
+    <div className="p-3 border-t border-zinc-800 flex gap-2 items-center">
+      <input
+        className="flex-1 p-2 bg-zinc-900 rounded outline-none"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) =>
+          e.key === "Enter" && sendMessage()
+        }
+        placeholder="Ask anything..."
+      />
+
+      {loading && (
+        <button
+          onClick={stop}
+          className="text-red-400 text-sm px-3"
+        >
+          Stop
+        </button>
+      )}
 
       <button
         onClick={sendMessage}
         className="px-4 py-2 bg-zinc-800 rounded"
+        disabled={loading}
       >
         {loading ? "..." : "Send"}
       </button>
     </div>
-  );
-}    
+  </div>
+);
+}
