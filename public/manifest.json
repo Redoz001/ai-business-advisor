@@ -14,8 +14,8 @@
       "type": "image/png"
     },
     {
-      "src": "/reunexus-splash.png",
-      "sizes": "1080x2400",
+      "src": "/icon-512.png",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ]

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
@@ -11,11 +11,41 @@ if (!rootElement) {
   throw new Error("Root element not found");
 }
 
-ReactDOM.createRoot(rootElement).render(
-  <BrowserRouter>
-    <App />
-  </BrowserRouter>
-);
+function Root() {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          width: "100vw",
+          height: "100vh",
+          backgroundImage: "url('/reunexus-splash.png')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          backgroundColor: "#020617",
+        }}
+      />
+    );
+  }
+
+  return (
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  );
+}
+
+ReactDOM.createRoot(rootElement).render(<Root />);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
