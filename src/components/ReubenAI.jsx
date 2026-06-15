@@ -90,7 +90,7 @@ const WELCOME_MESSAGES = [
   "Let’s ship something amazing today."
 ];
 
-export default function ReubenAI({
+export default function ReuNexus({
   user,
   activeChat,
   setActiveChat,
@@ -317,19 +317,7 @@ if (chatSession?.title === "New Chat") {
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-white">
 
-      {/* HEADER */}
-      <div className="p-3 border-b border-zinc-800 flex justify-between">
-        <div className="font-bold">Chat</div>
-
-        {loading && (
-          <button
-            onClick={stop}
-            className="text-red-400 text-sm"
-          >
-            Stop
-          </button>
-        )}
-      </div>
+     
 
       {/* CHAT AREA */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col">
@@ -396,27 +384,33 @@ if (chatSession?.title === "New Chat") {
         </div>
       )}
 
-      {/* INPUT */}
-      <div className="p-3 border-t border-zinc-800 flex gap-2">
-        <input
-          className="flex-1 p-2 bg-zinc-900 rounded outline-none"
-          value={input}
-          onChange={(e) =>
-            setInput(e.target.value)
-          }
-          onKeyDown={(e) =>
-            e.key === "Enter" && sendMessage()
-          }
-          placeholder="Ask anything..."
-        />
+    {/* INPUT */}
+<div className="p-3 border-t border-zinc-800 flex gap-2">
+  <input
+    className="flex-1 p-2 bg-zinc-900 rounded outline-none"
+    value={input}
+    onChange={(e) => setInput(e.target.value)}
+    onKeyDown={(e) =>
+      e.key === "Enter" && sendMessage()
+    }
+    placeholder="Ask anything..."
+  />
 
-        <button
-          onClick={sendMessage}
-          className="px-4 py-2 bg-zinc-800 rounded"
-        >
-          {loading ? "..." : "Send"}
-        </button>
-      </div>
+    {loading && (
+      <button
+        onClick={stop}
+        className="text-red-400 text-sm px-3"
+      >
+        Stop
+      </button>
+    )}
+
+      <button
+        onClick={sendMessage}
+        className="px-4 py-2 bg-zinc-800 rounded"
+      >
+        {loading ? "..." : "Send"}
+      </button>
     </div>
   );
-}
+}    
