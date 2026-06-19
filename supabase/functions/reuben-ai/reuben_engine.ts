@@ -213,14 +213,12 @@ ${facts.join("\n")}
 export async function routeRequest(message: string, context: any) {
   
   const history = sanitizeHistory(
-  console.log(
+  context?.sessionHistory || []
+);
+
+console.log(
   "SESSION HISTORY:",
-  JSON.stringify(
-    context?.sessionHistory,
-    null,
-    2
-  )
-);context?.sessionHistory || []
+  JSON.stringify(context?.sessionHistory, null, 2)
 );
 
 const conversationState =
