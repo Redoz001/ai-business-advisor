@@ -162,12 +162,65 @@ ${recentDiscussion}
   };
 }   
 
+  /* =========================
+   🧠 USER FACTS STATE
+========================= */
+function buildFactState(
+  history: any[],
+  currentMessage: string
+) {
+  let name = "";
+
+  const messages = [
+    ...history,
+    {
+      role: "user",
+      content: currentMessage,
+    },
+  ];
+
+  for (const m of messages) {
+    if (m.role !== "user") continue;
+
+    const match =
+      m.content.match(
+        /my name is\s+(.+)/i
+      );
+
+    if (match) {
+      name = match[1].trim();
+    }
+  }
+
+  const facts = [];
+
+  if (name) {
+    facts.push(`Name: ${name}`);
+  }
+
+  return {
+    role: "system",
+    content: `
+CURRENT USER FACTS
+
+${facts.join("\n")}
+    `.trim(),
+  };
+}
 /* =========================
    🚀 MAIN ENGINE
 ========================= */
 export async function routeRequest(message: string, context: any) {
+  
   const history = sanitizeHistory(
-  context?.sessionHistory || []
+  console.log(
+  "SESSION HISTORY:",
+  JSON.stringify(
+    context?.sessionHistory,
+    null,
+    2
+  )
+);context?.sessionHistory || []
 );
 
 const conversationState =
@@ -176,11 +229,17 @@ const conversationState =
     message
   );
 
+  const factState =
+  buildFactState(
+    history,
+    message
+  );
+
 const contextMessages = [
   conversationState,
+  factState,
   ...history,
 ];
-
   let webContext = "";
 
   try {
