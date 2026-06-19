@@ -107,12 +107,65 @@ function sanitizeHistory(history: any[]) {
       content: m.content,
     }));
 }
+     /* =========================
+   🧠 CONVERSATION STATE
+========================= */
+function buildConversationState(
+  history: any[],
+  currentMessage: string
+) {
+  const recentDiscussion = [
+    ...history,
+    {
+      role: "user",
+      content: currentMessage,
+    },
+  ]
+    .slice(-12)
+    .map(
+      (m) =>
+        `${m.role}: ${m.content}`
+    )
+    .join("\n");
+
+  return {
+    role: "system",
+    content: `
+CURRENT CONVERSATION CONTEXT
+
+You are in an ongoing conversation.
+
+Your responsibilities:
+- Understand what topic is currently being discussed.
+- Keep track of the user's goal and intent.
+- Assume follow-up questions relate to the current discussion unless the user clearly changes topics.
+- Maintain continuity.
+- Avoid asking the user to repeat context that already exists.
+
+Recent discussion:
+${recentDiscussion}
+    `.trim(),
+  };
+}   
 
 /* =========================
    🚀 MAIN ENGINE
 ========================= */
 export async function routeRequest(message: string, context: any) {
-  const history = sanitizeHistory(context?.sessionHistory || []);
+  const history = sanitizeHistory(
+  context?.sessionHistory || []
+);
+
+const conversationState =
+  buildConversationState(
+    history,
+    message
+  );
+
+const contextMessages = [
+  conversationState,
+  ...history,
+];
 
   let webContext = "";
 
@@ -141,6 +194,7 @@ export async function routeRequest(message: string, context: any) {
 You are ReuNexus AI (Grounded Mode).
 
 STRICT RULES:
+- If asked to compare yourself with anything remain objective and keep it confident and factual ,,highlighting your unique strengths and areas where you shine,acknowledge other AIs objectively but never diminish your own capabilities
 - Use ONLY the provided context
 - Do NOT use prior knowledge
 - Do NOT hallucinate or assume missing facts
@@ -234,14 +288,23 @@ ${message}
     try {
       if (model === "openai") {
         console.log("🧠 OpenAI Brain");
-        result = await askOpenAI(enrichedMessage, history);
+        result = await askOpenAI(
+  enrichedMessage,
+  contextMessages
+);
       } else {
         console.log("⚡ Groq Brain");
-        result = await askGroq(enrichedMessage, history);
+        result = await askGroq(
+  enrichedMessage,
+  contextMessages
+);
       }
     } catch (err) {
       console.warn("Primary brain failed, switching fallback...");
-      result = await askGroq(enrichedMessage, history);
+      result = await askGroq(
+  enrichedMessage,
+  contextMessages
+);
     }
 
     return {
