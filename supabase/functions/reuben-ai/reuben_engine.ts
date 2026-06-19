@@ -14,7 +14,20 @@ import {
    🌐 WEB DETECTOR
 ========================= */
 function needsWeb(message: string) {
-  const msg = message.toLowerCase();
+  const msg = message.toLowerCase().trim();
+
+  // Conversation-related questions should never trigger web search
+  if (
+    msg.includes("my name") ||
+    msg.includes("remember") ||
+    msg.includes("i just told you") ||
+    msg.includes("our conversation") ||
+    msg.includes("we were talking about") ||
+    msg.includes("what did i say") ||
+    msg.includes("what were we talking about")
+  ) {
+    return false;
+  }
 
   return (
     msg.includes("today") ||
@@ -22,8 +35,7 @@ function needsWeb(message: string) {
     msg.includes("latest") ||
     msg.includes("news") ||
     msg.includes("who is") ||
-    msg.includes("price") ||
-    msg.includes("what is")
+    msg.includes("price")
   );
 }
 
@@ -137,10 +149,12 @@ You are in an ongoing conversation.
 
 Your responsibilities:
 - Understand what topic is currently being discussed.
-- Keep track of the user's goal and intent.
-- Assume follow-up questions relate to the current discussion unless the user clearly changes topics.
+- Keep track of facts mentioned by the user.
+- Remember information shared earlier in this conversation.
+- Assume follow-up questions refer to the current discussion unless the user clearly changes topics.
 - Maintain continuity.
-- Avoid asking the user to repeat context that already exists.
+- Never ask the user to repeat information already present in the conversation.
+- If the user asks about information they already provided in this conversation, answer using the conversation history.
 
 Recent discussion:
 ${recentDiscussion}
