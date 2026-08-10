@@ -1,5 +1,10 @@
-// Providers are imported lazily below to avoid crashing the function
-// at module load time when environment secrets are missing.
+import { askGroq } from "./providers/groq.ts";
+import { askOpenAI } from "./providers/openai.ts";
+import { searchTavily } from "./providers/tavily.ts";
+
+import { generateImage } from "./providers/runway.ts";
+import { generateSpeech } from "./providers/elevenlabs.ts";
+import { generateLocalImage } from "./providers/reucore.ts";
 
 import {
   getMemory,
@@ -8,96 +13,95 @@ import {
   extractLearning
 } from "./ai/memory.ts";
 
-    /* =========================
-       🎬 VISUAL GENERATION (IMAGE/VIDEO)
-    ========================= */
-    if (needsVisual(message)) {
-      console.log("🎬 Visual generation triggered (lazy providers)");
+/* =========================
+   🌐 WEB DETECTOR
+========================= */
+function needsWeb(message: string) {
+  const msg = message.toLowerCase().trim();
+  if (
+    msg.includes("my name") ||
+    msg.includes("remember") ||
+    msg.includes("i just told you") ||
+    msg.includes("our conversation") ||
+    msg.includes("we were talking about") ||
+    msg.includes("what did i say") ||
+    msg.includes("what were we talking about")
+  ) {
+    return false;
+  }
+  return (
+    msg.includes("today") ||
+    msg.includes("current") ||
+    msg.includes("latest") ||
+    msg.includes("news") ||
+    msg.includes("who is") ||
+    msg.includes("price")
+  );
+}
 
-      // --- 1. Check for video intent ---
-      const isVideo = /video|clip|animate|animation|moving/i.test(message);
-      if (isVideo) {
-        console.log("🎬 Video request detected (placeholder)");
-        return {
-          type: "text",
-          payload: "Video generation is coming soon. We're working on it! 🎬",
-          webUsed: false,
-          mode: "video-placeholder",
-        };
-      }
+/* =========================
+   🎬 VISUAL DETECTOR (IMAGE/VIDEO)
+========================= */
+function needsVisual(message: string) {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("image") ||
+    msg.includes("picture") ||
+    msg.includes("draw") ||
+    msg.includes("render") ||
+    msg.includes("photo") ||
+    msg.includes("generate image") ||
+    msg.includes("create image") ||
+    msg.includes("make image") ||
+    msg.includes("video") ||
+    msg.includes("clip") ||
+    msg.includes("animate")
+  );
+}
 
-      // --- 2. Try local ReuCore first (lazy import) ---
-      try {
-        console.log("🔄 Attempting local ReuCore generation (lazy import)...");
-        const mod = await import("./providers/reucore.ts");
-        const generateLocalImage = mod.generateLocalImage || mod.default || mod;
-        const localResult = await generateLocalImage({
-          prompt: message,
-          aspectRatio: "default",
-        });
+/* =========================
+   🔊 ELEVENLABS DETECTOR
+========================= */
+function needsElevenLabs(message: string) {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("speak") ||
+    msg.includes("voice") ||
+    msg.includes("audio") ||
+    msg.includes("read") ||
+    msg.includes("tts") ||
+    msg.includes("elevenlabs")
+  );
+}
 
-        if (localResult && typeof localResult === "string" && localResult.startsWith("data:image/")) {
-          console.log("✅ ReuCore generated SVG successfully");
-          return {
-            type: "image",
-            content: message,
-            image: {
-              svg: localResult,
-              prompt: message,
-              width: 1200,
-              height: 675,
-            },
-            webUsed: false,
-            mode: "reucore",
-          };
-        }
+/* =========================
+   🧠 SMART ROUTER
+========================= */
+async function routeModel(message: string): Promise<"openai" | "groq"> {
+  try {
+    const decision = await askGroq(`
+You are an AI routing engine.
+Decide which model should handle this request.
+RULES:
+- openai → complex reasoning, coding, debugging, architecture, deep explanation, analysis, planning
+- groq → simple Q&A, short answers, casual chat, basic info
+Return ONLY valid JSON:
+{ "model": "openai" | "groq", "confidence": 0-1 }
+User message:
+${message}
+`);
+    const parsed = JSON.parse(decision);
+    if (parsed?.model === "openai") return "openai";
+    return "groq";
+  } catch {
+    return "groq";
+  }
+}
 
-        throw new Error("ReuCore returned invalid result");
-      } catch (localErr: any) {
-        console.warn("⚠️ ReuCore failed or not available, falling back to Runway:", localErr?.message ?? localErr);
-
-        // --- 3. Fallback to Runway (lazy) ---
-        try {
-          console.log("🔄 Trying Runway as fallback (lazy import)...");
-          const runway = await import("./providers/runway.ts");
-          const generateImage = runway.generateImage || runway.default || runway;
-          const imageResult = await generateImage(message);
-
-          const finalUrl =
-            typeof imageResult === "string"
-              ? imageResult
-              : imageResult?.output_url ||
-                imageResult?.url ||
-                imageResult?.payload ||
-                (Array.isArray(imageResult?.output) ? imageResult.output[0] : null) ||
-                (Array.isArray(imageResult?.result) ? imageResult.result[0] : null);
-
-          if (!finalUrl || typeof finalUrl !== "string") {
-            throw new Error("No valid image URL extracted from Runway");
-          }
-
-          console.log("✅ Runway generation succeeded");
-          return {
-            type: "image",
-            content: message,
-            image: {
-              url: finalUrl,
-              prompt: message,
-            },
-            webUsed: false,
-            mode: "runway",
-          };
-        } catch (runwayErr: any) {
-          console.error("❌ Runway also failed or is not configured:", runwayErr?.message ?? runwayErr);
-          return {
-            type: "text",
-            payload: "Image generation failed. Please try again later.",
-            webUsed: false,
-            mode: "generation-error",
-          };
-        }
-      }
-    }
+/* =========================
+   🧹 HISTORY SANITIZER
+========================= */
+function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
   return history
     .filter(m => m?.content && typeof m.content === "string")
@@ -179,17 +183,15 @@ export async function routeRequest(message: string, context: any) {
        🌐 WEB SEARCH
     ========================= */
     if (needsWeb(message)) {
-      console.log("🌐 Tavily search triggered (lazy)");
+      console.log("🌐 Tavily search triggered");
       try {
-        const mod = await import("./providers/tavily.ts");
-        const searchFn = mod.searchTavily || mod.default || mod;
-        const search = await searchFn(message);
+        const search = await searchTavily(message);
         webContext =
           search?.answer ||
           search?.results?.map((r: any) => r.content).join("\n") ||
           "";
       } catch (err: any) {
-        console.warn("Tavily failed or not configured:", err?.message ?? err);
+        console.warn("Tavily failed:", err.message);
         webContext = "";
       }
     }
@@ -311,8 +313,6 @@ ${message}
     if (needsElevenLabs(message)) {
       console.log("🔊 ElevenLabs triggered");
       try {
-        const mod = await import("./providers/elevenlabs.ts");
-        const generateSpeech = mod.generateSpeech || mod.default || mod;
         const audioUrl = await generateSpeech(message);
         return {
           type: "audio",
@@ -338,26 +338,15 @@ ${message}
     let result = "";
     try {
       if (model === "openai") {
-        console.log("🧠 OpenAI Brain (lazy)");
-        const mod = await import("./providers/openai.ts");
-        const askOpenAI = mod.askOpenAI || mod.default || mod;
+        console.log("🧠 OpenAI Brain");
         result = await askOpenAI(enrichedMessage, contextMessages);
       } else {
-        console.log("⚡ Groq Brain (lazy)");
-        const mod = await import("./providers/groq.ts");
-        const askGroq = mod.askGroq || mod.default || mod;
+        console.log("⚡ Groq Brain");
         result = await askGroq(enrichedMessage, contextMessages);
       }
     } catch (err) {
-      console.warn("Primary brain failed or provider unavailable, switching fallback...", err?.message ?? err);
-      try {
-        const mod = await import("./providers/groq.ts");
-        const askGroq = mod.askGroq || mod.default || mod;
-        result = await askGroq(enrichedMessage, contextMessages);
-      } catch (fallbackErr: any) {
-        console.error("Fallback Groq also failed:", fallbackErr?.message ?? fallbackErr);
-        result = "";
-      }
+      console.warn("Primary brain failed, switching fallback...");
+      result = await askGroq(enrichedMessage, contextMessages);
     }
 
     return {
