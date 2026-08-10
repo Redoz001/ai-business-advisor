@@ -129,11 +129,12 @@ npm run dev
 
 You can generate images and short videos entirely in your browser without any external API or always-on server. The repo includes a procedural SVG generator and an in-browser recorder.
 
-- Enable local visuals by setting the environment flag:
+- Local visuals now default to browser-only generation. No external API or always-on server is required for images.
 
 ```bash
 # in .env or .env.local
-VITE_LOCAL_VISUAL=true
+# Optional: disable browser-only local visuals if you want only server/API visuals
+VITE_DISABLE_LOCAL_VISUAL=true
 ```
 
 - Quality options:

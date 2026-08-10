@@ -38,8 +38,8 @@ export class RequestPipeline {
     this.supabase =
       supabaseClient ||
       createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
       );
   }
 
@@ -52,35 +52,42 @@ export class RequestPipeline {
     // ---- DETECT VISUAL INTENT ----
     const isVisual = this.isVisualRequest(prompt);
 
-    // ---- IF VISUAL → CALL EDGE FUNCTION ----
+    // ---- IF VISUAL → LOCAL FIRST, THEN EDGE FUNCTION ----
     if (isVisual) {
-      // If local visual generation is enabled via Vite env, try that first
-      try {
-        if (import.meta.env.VITE_LOCAL_VISUAL === "true") {
-          const wantsVideo = /\b(video|animate|animation)\b/i.test(prompt);
-          const wantsHighQuality = /\b(photo|photorealistic|high[- ]?quality|best|realistic|4k|8k|ultra)\b/i.test(prompt);
-          const local = await generateVisual({ prompt, outputType: wantsVideo ? "video" : "image", quality: wantsHighQuality ? "high" : "standard" });
+      const wantsVideo = /\b(video|animate|animation)\b/i.test(prompt);
+      const wantsHighQuality = /\b(photo|photorealistic|high[- ]?quality|best|realistic|4k|8k|ultra)\b/i.test(prompt);
+      const useLocalVisual = import.meta.env.VITE_DISABLE_LOCAL_VISUAL !== "true";
+
+      if (useLocalVisual) {
+        try {
+          const local = await generateVisual({
+            prompt,
+            outputType: wantsVideo ? "video" : "image",
+            quality: wantsHighQuality ? "high" : "standard",
+          });
 
           if (local.success) {
-            if (wantsVideo && local.video && local.video.url) {
+            if (wantsVideo && local.video?.url) {
               return {
                 type: "video",
                 content: "Generated video",
                 video: {
                   url: local.video.url,
                   mimeType: local.video.mimeType,
+                  durationSeconds: local.video.duration,
                 },
                 metadata: { mode: "reucore-local" },
                 shouldStream: false,
               };
             }
 
-            if (!wantsVideo && local.svg) {
+            if (!wantsVideo && (local.svg || local.url)) {
               return {
                 type: "image",
                 content: prompt,
                 image: {
                   svg: local.svg,
+                  url: local.url,
                   width: local.width,
                   height: local.height,
                   prompt,
@@ -90,10 +97,10 @@ export class RequestPipeline {
               };
             }
           }
+        } catch (err) {
+          console.error("Local visual generation failed:", err);
+          // fall through to edge function
         }
-      } catch (err) {
-        console.error("Local visual generation failed:", err);
-        // fall through to edge function
       }
       try {
         const response = await this.callEdgeFunction({

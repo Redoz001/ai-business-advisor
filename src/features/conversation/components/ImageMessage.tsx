@@ -1,9 +1,4 @@
-﻿export default function ImageMessage({ content, image }: ImageMessageProps) {
-  console.log("🔍 ImageMessage rendered:", { content, image });
-  // ...
-}
-
-// src/features/conversation/components/ImageMessage.tsx
+﻿// src/features/conversation/components/ImageMessage.tsx
 import React from "react";
 
 interface ImageMessageProps {

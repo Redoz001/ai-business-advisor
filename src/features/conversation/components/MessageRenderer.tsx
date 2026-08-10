@@ -55,6 +55,18 @@ export default function MessageRenderer({ message }: MessageRendererProps) {
       }
     }
 
+    if (!imageData) {
+      console.warn("No image payload or image object found for image message.");
+      return (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-100">
+          <p className="font-medium">Image request recognized</p>
+          <p className="mt-2 text-sm text-amber-100/80">
+            The system detected an image request, but no image data was returned. Check your visual generation pipeline or API response.
+          </p>
+        </div>
+      );
+    }
+
     console.log("🖼️ IMAGE DATA:", imageData);
     return <ImageMessage content={message.content} image={imageData} />;
   }
@@ -72,6 +84,19 @@ export default function MessageRenderer({ message }: MessageRendererProps) {
         videoData = { url: String(payload), prompt: message.content };
       }
     }
+
+    if (!videoData?.url) {
+      console.warn("No video payload or video object found for video message.");
+      return (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-100">
+          <p className="font-medium">Video request recognized</p>
+          <p className="mt-2 text-sm text-amber-100/80">
+            The system detected a video request, but no video data was returned. The feature may still be under development or the backend returned a placeholder response.
+          </p>
+        </div>
+      );
+    }
+
     return <VideoMessage content={message.content} video={videoData} />;
   }
 
