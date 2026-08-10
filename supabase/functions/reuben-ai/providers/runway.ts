@@ -1,151 +1,330 @@
-export async function generateImage(prompt: string) {
-  const apiKey = Deno.env.get("RUNWAY_API_KEY");
+const RUNWAY_API_BASE =
+  "https://api.dev.runwayml.com/v1";
+
+const RUNWAY_API_VERSION = "2024-11-06";
+
+const POLL_INTERVAL_MS = 5000;
+const MAX_POLL_ATTEMPTS = 24;
+
+type RunwayTaskResponse = {
+  id?: string;
+  status?: string;
+  output?: unknown;
+  output_url?: unknown;
+  result?: unknown;
+  failure?: string;
+  failureCode?: string;
+  error?: string;
+};
+
+export async function generateImage(
+  prompt: string
+): Promise<string> {
+  const cleanPrompt = prompt.trim();
+
+  if (!cleanPrompt) {
+    throw new Error(
+      "An image prompt is required."
+    );
+  }
+
+  const apiKey =
+    Deno.env.get("RUNWAY_API_KEY");
 
   if (!apiKey) {
-    throw new Error("Missing RUNWAY_API_KEY");
+    throw new Error(
+      "Missing RUNWAY_API_KEY in Supabase secrets."
+    );
   }
 
-  // =========================
-  // 1. START GENERATION
-  // =========================
-
-  const payload: any = {
-    model: "gen4_image_turbo",
-    promptText: prompt,
-    ratio: "1024:1024",
-
-    // ✅ HARD GUARANTEE: always valid array of objects
-    referenceImages: [
-      {
-        uri: "https://dummyimage.com/1024x1024/000/fff.png",
-      },
-    ],
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    "X-Runway-Version":
+      RUNWAY_API_VERSION,
   };
 
-  // 🔒 SAFETY GUARD (prevents accidental upstream mutation issues)
-  if (
-    !Array.isArray(payload.referenceImages) ||
-    payload.referenceImages.length === 0
-  ) {
-    payload.referenceImages = [
-      {
-        uri: "https://dummyimage.com/1024x1024/000/fff.png",
-      },
-    ];
-  }
+  /*
+   * Use gen4_image for text-only generation.
+   * gen4_image_turbo requires an image reference.
+   */
+  const payload = {
+    model: "gen4_image",
+    promptText: cleanPrompt,
+    ratio: "1024:1024",
+  };
 
-  const init = await fetch(
-    "https://api.dev.runwayml.com/v1/text_to_image",
+  console.log(
+    "Starting Runway image generation:",
+    {
+      model: payload.model,
+      ratio: payload.ratio,
+      promptLength: cleanPrompt.length,
+    }
+  );
+
+  const initResponse = await fetch(
+    `${RUNWAY_API_BASE}/text_to_image`,
     {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "X-Runway-Version": "2024-11-06",
-      },
+      headers,
       body: JSON.stringify(payload),
     }
   );
 
-  if (!init.ok) {
-    const err = await init.text();
-    throw new Error("Runway init failed: " + err);
+  const initBody =
+    await initResponse.text();
+
+  if (!initResponse.ok) {
+    throw new Error(
+      [
+        `Runway initialization failed (${initResponse.status}).`,
+        initBody || "No error body returned.",
+      ].join(" ")
+    );
   }
 
-  const initData = await init.json();
-  const id = initData?.id;
+  const initData =
+    parseJson<RunwayTaskResponse>(
+      initBody,
+      "Runway returned invalid initialization JSON."
+    );
 
-  if (!id) {
-    throw new Error("Runway did not return a task id");
+  const taskId = initData.id;
+
+  if (
+    !taskId ||
+    typeof taskId !== "string"
+  ) {
+    throw new Error(
+      `Runway did not return a task ID. Response: ${initBody}`
+    );
   }
 
-  // =========================
-  // 2. POLLING LOOP (HARDENED)
-  // =========================
+  console.log(
+    "Runway task created:",
+    taskId
+  );
 
-  let attempts = 0;
-  const maxAttempts = 10;
-  const delay = 2500;
+  let lastStatus = "UNKNOWN";
 
-  while (attempts < maxAttempts) {
-    await new Promise((r) => setTimeout(r, delay));
+  for (
+    let attempt = 1;
+    attempt <= MAX_POLL_ATTEMPTS;
+    attempt++
+  ) {
+    await sleep(
+      POLL_INTERVAL_MS +
+        Math.floor(Math.random() * 750)
+    );
 
-    let statusRes;
+    const statusResponse = await fetch(
+      `${RUNWAY_API_BASE}/tasks/${taskId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization:
+            `Bearer ${apiKey}`,
+          "X-Runway-Version":
+            RUNWAY_API_VERSION,
+        },
+      }
+    );
 
-    try {
-      statusRes = await fetch(
-        `https://api.dev.runwayml.com/v1/tasks/${id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-        }
+    const statusBody =
+      await statusResponse.text();
+
+    if (!statusResponse.ok) {
+      throw new Error(
+        [
+          `Runway status request failed (${statusResponse.status}).`,
+          statusBody ||
+            "No error body returned.",
+        ].join(" ")
       );
-    } catch (err) {
-      throw new Error("Runway network failure");
     }
 
-    if (!statusRes.ok) {
-      const err = await statusRes.text();
-      throw new Error("Runway status failed: " + err);
-    }
+    const task =
+      parseJson<RunwayTaskResponse>(
+        statusBody,
+        "Runway returned invalid task-status JSON."
+      );
 
-    let statusData: any;
+    const status = String(
+      task.status ?? "UNKNOWN"
+    ).toUpperCase();
 
-    try {
-      statusData = await statusRes.json();
-    } catch {
-      throw new Error("Runway returned invalid JSON status response");
-    }
+    lastStatus = status;
 
-    // =========================
-    // 3. SUCCESS CASE
-    // =========================
+    console.log(
+      `Runway task ${taskId}:`,
+      {
+        attempt,
+        status,
+      }
+    );
 
-    if (
-      statusData.status === "succeeded" ||
-      statusData.status === "completed"
-    ) {
-      const url =
-        typeof statusData?.output === "string"
-          ? statusData.output
-          : Array.isArray(statusData?.output)
-          ? statusData.output[0]
-          : typeof statusData?.output_url === "string"
-          ? statusData.output_url
-          : typeof statusData?.result === "string"
-          ? statusData.result
-          : Array.isArray(statusData?.result)
-          ? statusData.result[0]
-          : typeof statusData?.result?.files?.[0] === "string"
-          ? statusData.result.files[0]
-          : typeof statusData?.output?.url === "string"
-          ? statusData.output.url
-          : null;
+    /*
+     * Runway statuses are uppercase.
+     */
+    if (status === "SUCCEEDED") {
+      const outputUrl =
+        extractOutputUrl(task);
 
-      if (!url || typeof url !== "string") {
+      if (!outputUrl) {
         throw new Error(
-          "Runway succeeded but no valid output URL found"
+          [
+            "Runway reported SUCCEEDED",
+            "but returned no valid image URL.",
+            `Response: ${statusBody}`,
+          ].join(" ")
         );
       }
 
-      return url;
+      console.log(
+        "Runway image generation completed:",
+        outputUrl
+      );
+
+      return outputUrl;
     }
 
-    // =========================
-    // 4. FAILURE CASE
-    // =========================
+    if (
+      status === "FAILED" ||
+      status === "CANCELED" ||
+      status === "CANCELLED"
+    ) {
+      const failureDetails = [
+        task.failureCode,
+        task.failure,
+        task.error,
+      ]
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.trim().length > 0
+        )
+        .join(" — ");
 
-    if (statusData.status === "failed") {
-      throw new Error("Runway generation failed");
+      throw new Error(
+        failureDetails
+          ? `Runway task ${status}: ${failureDetails}`
+          : `Runway task ${status}. Response: ${statusBody}`
+      );
     }
 
-    // =========================
-    // 5. LOOP CONTROL
-    // =========================
-
-    attempts++;
+    /*
+     * Expected incomplete statuses include
+     * PENDING, RUNNING and THROTTLED.
+     * Continue polling for those statuses.
+     */
   }
 
-  throw new Error("Runway timeout: generation took too long");
+  throw new Error(
+    [
+      "Runway generation timed out.",
+      `Last status: ${lastStatus}.`,
+      `Task ID: ${taskId}.`,
+    ].join(" ")
+  );
+}
+
+function parseJson<T>(
+  value: string,
+  errorMessage: string
+): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    throw new Error(
+      `${errorMessage} Response: ${value}`
+    );
+  }
+}
+
+function extractOutputUrl(
+  task: RunwayTaskResponse
+): string | null {
+  return (
+    findUrl(task.output) ??
+    findUrl(task.output_url) ??
+    findUrl(task.result)
+  );
+}
+
+function findUrl(
+  value: unknown
+): string | null {
+  if (typeof value === "string") {
+    const candidate = value.trim();
+
+    if (isHttpUrl(candidate)) {
+      return candidate;
+    }
+
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = findUrl(item);
+
+      if (url) {
+        return url;
+      }
+    }
+
+    return null;
+  }
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    const record =
+      value as Record<string, unknown>;
+
+    const preferredKeys = [
+      "url",
+      "uri",
+      "output_url",
+      "outputUrl",
+      "files",
+      "output",
+      "result",
+    ];
+
+    for (const key of preferredKeys) {
+      const url = findUrl(record[key]);
+
+      if (url) {
+        return url;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isHttpUrl(
+  value: string
+): boolean {
+  try {
+    const url = new URL(value);
+
+    return (
+      url.protocol === "https:" ||
+      url.protocol === "http:"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sleep(
+  milliseconds: number
+): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }

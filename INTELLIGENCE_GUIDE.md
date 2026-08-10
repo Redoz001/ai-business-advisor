@@ -125,6 +125,33 @@ If you don't set API keys, the system will use intelligent local response genera
 npm run dev
 ```
 
+### Local Visual Generation (No external API)
+
+You can generate images and short videos entirely in your browser without any external API or always-on server. The repo includes a procedural SVG generator and an in-browser recorder.
+
+- Enable local visuals by setting the environment flag:
+
+```bash
+# in .env or .env.local
+VITE_LOCAL_VISUAL=true
+```
+
+- Quality options:
+	- `standard` (default): returns SVGs generated instantly by the procedural engine.
+	- `high`: rasterizes the SVG at higher resolution and applies lightweight post-processing (vignette, grain) or a higher-quality video render. You can request high quality in two ways:
+		- Include keywords in your prompt like "photorealistic", "high quality", "4k", or
+		- The system detects these keywords automatically and requests `quality: high` for you.
+
+- Request examples:
+	- Image: "Generate an image of a futuristic city"
+	- High-quality image: "Photorealistic image of a futuristic city, 4k"
+	- Video: "Animate a futuristic city" or "Create a short video of a futuristic city"
+
+- Notes & limitations:
+	- The browser-based generator is fast, private, and requires no cloud GPU. It produces stylized, deterministic SVG visuals (or rasterized PNG for `high`).
+	- The in-browser video is a short WebM clip produced by rendering frames to a canvas and encoding with `MediaRecorder`. It's intended as a high-quality local proof-of-concept and can be tuned for longer duration or different motion styles.
+	- `high` quality improves visual fidelity but runs rasterization and lightweight effects in the browser — it doesn't match GPU diffusion photorealism, but it avoids keeping a server always-on.
+
 ## Advanced Features
 
 ### Context-Aware Responses

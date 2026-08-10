@@ -1,0 +1,26 @@
+=== IMAGE GENERATION FAILED ===
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\supabase\functions\reuben-ai\reuben_engine.ts:318:          payload: "Image generation failed.",
+
+=== REQUEST PIPELINE USAGE ===
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\components\ReubenAI.jsx:2:import { ConversationEngine } from "../features/conversation";
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\components\ReubenAI.jsx:4:export default function ReubenAI({
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\components\ReubenAI.jsx:10:    <ConversationEngine
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\hooks\useConversation.ts:18:  ConversationEngineProps,
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\hooks\useConversation.ts:22:import { RequestPipeline } from "../services/RequestPipeline";
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\hooks\useConversation.ts:52:}: ConversationEngineProps) {
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\hooks\useConversation.ts:70:    new RequestPipeline()
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\hooks\useConversation.ts:217:          MessageService.requestTextResponse
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\services\MessageService.ts:104:  static async requestTextResponse(input: {
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\services\RequestPipeline.ts:33:export class RequestPipeline {
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\services\RequestPipeline.ts:38:    requestTextResponse: TextResponseRequester
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\services\RequestPipeline.ts:171:    const response = await requestTextResponse({
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\types\Conversation.ts:8:export type ConversationEngineProps = {
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\ConversationEngine.tsx:9:  ConversationEngineProps,
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\ConversationEngine.tsx:12:export default function ConversationEngine(
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\ConversationEngine.tsx:13:  props: ConversationEngineProps
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\index.ts:1:export { default as ConversationEngine } from "./ConversationEngine";
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\features\conversation\index.ts:11:  ConversationEngineProps,
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\App.jsx:9:import ReubenAI from "./components/ReubenAI.jsx";
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\App.jsx:201:                <ReubenAI
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\src\chat.jsx:2:import ChatCore from "./ReubenAI.jsx";
+C:\Users\redoz\OneDrive\Documents\Reuben\ai-business-advisor\supabase\functions\reuben-ai\prompts\system.ts:2:You are ReubenAI.

@@ -1,37 +1,15 @@
-import React, { useEffect, useState, useRef } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { supabase } from "./lib/supabase.js";
 
 import Auth from "./Auth.jsx";
-import Sidebar from "./components/Sidebar.jsx";
+import Callback from "./Callback.jsx";
+import Visual from "./Visual.jsx";
+
 import ReubenAI from "./components/ReubenAI.jsx";
 import Settings from "./components/settings.jsx";
-/* ===============================
-   AUTH CALLBACK
-================================= */
-function AuthCallback() {
-  useEffect(() => {
-    const handleAuth = async () => {
-      await supabase.auth.getSession();
+import Sidebar from "./components/Sidebar.jsx";
 
-      setTimeout(() => {
-        window.location.replace("/");
-      }, 300);
-    };
-
-    handleAuth();
-  }, []);
-
-  return (
-    <div className="h-screen flex items-center justify-center bg-black text-white">
-      Signing you in...
-    </div>
-  );
-}
-
-/* ===============================
-   MAIN APP
-================================= */
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [activeChat, setActiveChat] = useState(null);
@@ -43,59 +21,84 @@ export default function App() {
   /* ===============================
      AUTH STATE
   =============================== */
+
   useEffect(() => {
     let alive = true;
 
-    const initAuth = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (alive) setUser(data?.session?.user ?? null);
-    };
+    async function initAuth() {
+      const { data, error } = await supabase.auth.getSession();
+
+      console.log("Session:", data.session);
+      console.log("Auth Error:", error);
+
+      if (!alive) return;
+
+      setUser(data?.session?.user ?? null);
+    }
 
     initAuth();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (alive) setUser(session?.user ?? null);
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+
+      console.log("Auth State Changed:", session);
+
+      setUser(session?.user ?? null);
+    });
 
     return () => {
       alive = false;
-      sub.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
   /* ===============================
-     LOAD SESSIONS
+     LOAD CHAT SESSIONS
   =============================== */
+
   const loadSessions = async () => {
     if (!user?.id) return;
     if (loadingRef.current) return;
 
     loadingRef.current = true;
 
-    const { data } = await supabase
-      .from("chat_sessions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("chat_sessions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", {
+          ascending: false,
+        });
 
-    setSessions(data || []);
-    loadingRef.current = false;
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      setSessions(data || []);
+    } finally {
+      loadingRef.current = false;
+    }
   };
 
   useEffect(() => {
-    if (user?.id) loadSessions();
-  }, [user?.id]);
+    if (user?.id) {
+      loadSessions();
+    }
+  }, [user]);
 
   /* ===============================
-     REALTIME UPDATES
+     REALTIME CHAT
   =============================== */
+
   useEffect(() => {
     if (!user?.id) return;
 
     const channel = supabase
-      .channel("chat_sessions_realtime")
+      .channel(`chat_sessions_${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -104,18 +107,21 @@ export default function App() {
           table: "chat_sessions",
           filter: `user_id=eq.${user.id}`,
         },
-        () => loadSessions()
+        () => {
+          loadSessions();
+        }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user]);
 
   /* ===============================
      AUTO SELECT CHAT
   =============================== */
+
   useEffect(() => {
     if (!activeChat && sessions.length > 0) {
       setActiveChat(sessions[0].id);
@@ -125,6 +131,7 @@ export default function App() {
   /* ===============================
      LOADING
   =============================== */
+
   if (user === undefined) {
     return (
       <div className="h-screen flex items-center justify-center bg-black text-white">
@@ -135,75 +142,111 @@ export default function App() {
 
   return (
     <Routes>
-      {/* AUTH CALLBACK */}
-      <Route path="/auth/callback" element={<AuthCallback />} />
-
-      {/* LOGIN */}
+      {/* OAuth Callback */}
       <Route
-        path="/auth"
-        element={user ? <Navigate to="/" /> : <Auth />}
+        path="/auth/callback"
+        element={<Callback />}
       />
 
-          {/* MAIN APP */}
-    <Route
-  path="/"
-  element={
-    user ? (
-      <div className="h-screen flex bg-black text-white overflow-hidden">
-        {/* SIDEBAR */}
-        <div
-          className={`${
-            sidebarOpen ? "w-64" : "w-0"
-          } transition-all duration-300 overflow-hidden flex-shrink-0`}
-        >
-          <Sidebar
-            user={user}
-            sessions={sessions}
-            refreshSessions={loadSessions}
-            activeChat={activeChat}
-            setActiveChat={setActiveChat}
-            createNewChat={() => setActiveChat(null)}
-          />
-        </div>
+      {/* Login */}
+      <Route
+        path="/auth"
+        element={
+          user
+            ? <Navigate to="/" replace />
+            : <Auth />
+        }
+      />
 
-        {/* MAIN AREA */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden ">
-          {/* TOP BAR */}
-          <div className="h-14 border-b border-zinc-800 flex items-center px-3">
-            <button onClick={() => setSidebarOpen((p) => !p)}>
-              ☰
-            </button>
-            <h1 className="ml-3 font-bold">ReuNexus</h1>
-          </div>
+      {/* Chat */}
+      <Route
+        path="/"
+        element={
+          user ? (
+            <div className="flex h-screen overflow-hidden bg-black text-white">
 
-          {/* CHAT */}
-          <ReubenAI
-            user={user}
-            activeChat={activeChat}
-            setActiveChat={setActiveChat}
-          />
-        </div>
-      </div>
-    ) : (
-      <Navigate to="/auth" />
-    )
-  }
-/>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  sidebarOpen ? "w-64" : "w-0"
+                }`}
+              >
+                <Sidebar
+                  user={user}
+                  sessions={sessions}
+                  refreshSessions={loadSessions}
+                  activeChat={activeChat}
+                  setActiveChat={setActiveChat}
+                  createNewChat={() => setActiveChat(null)}
+                />
+              </div>
 
-{/* SETTINGS */}
-<Route
-  path="/settings"
-  element={
-    user ? (
-      <Settings user={user} />
-    ) : (
-      <Navigate to="/auth" />
-    )
-  }
-/>
+              <div className="flex flex-1 flex-col overflow-hidden">
 
-{/* CATCH ALL (IMPORTANT FOR VERCEL) */}
-<Route path="*" element={<Navigate to="/" />} />
-</Routes>
-);
+                <div className="flex h-14 items-center border-b border-zinc-800 px-3">
+
+                  <button
+                    onClick={() =>
+                      setSidebarOpen(!sidebarOpen)
+                    }
+                  >
+                    ☰
+                  </button>
+
+                  <h1 className="ml-3 font-bold">
+                    ReuNexus
+                  </h1>
+
+                </div>
+
+                <ReubenAI
+                  user={user}
+                  activeChat={activeChat}
+                  setActiveChat={setActiveChat}
+                />
+
+              </div>
+
+            </div>
+          ) : (
+            <Navigate
+              to="/auth"
+              replace
+            />
+          )
+        }
+      />
+
+      {/* Visual Workspace */}
+      <Route
+        path="/visual"
+        element={
+          user
+            ? <Visual />
+            : <Navigate
+                to="/auth"
+                replace
+              />
+        }
+      />
+
+      {/* Settings */}
+      <Route
+        path="/settings"
+        element={
+          user
+            ? <Settings user={user} />
+            : <Navigate
+                to="/auth"
+                replace
+              />
+        }
+      />
+
+      {/* Catch All */}
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
+    </Routes>
+  );
 }
