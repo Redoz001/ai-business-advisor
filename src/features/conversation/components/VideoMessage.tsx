@@ -20,18 +20,27 @@ export default function VideoMessage({
       )}
 
       {video?.url ? (
-        <video
-          controls
-          poster={video.thumbnailUrl}
-          className="max-h-[650px] w-full rounded-xl border border-zinc-800 bg-black"
-        >
-          <source
-            src={video.url}
-            type={video.mimeType || "video/mp4"}
-          />
+        <div className="flex justify-center rounded-xl border border-zinc-800 bg-black overflow-hidden">
+          <video
+            controls
+            poster={video.thumbnailUrl}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "500px",
+              width: "auto",
+              height: "auto",
+              objectFit: "contain",
+            }}
+            className="rounded-xl"
+          >
+            <source
+              src={video.url}
+              type={video.mimeType || "video/webm"}
+            />
 
-          Your browser does not support video playback.
-        </video>
+            Your browser does not support video playback.
+          </video>
+        </div>
       ) : (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
           <p className="font-medium text-amber-200">

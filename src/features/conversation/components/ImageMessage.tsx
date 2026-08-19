@@ -77,16 +77,36 @@ export default function ImageMessage({ content, image }: ImageMessageProps) {
     }
   }
 
-  // --- URL HANDLING (Runway or external) ---
+  // --- URL HANDLING (Runway, Pollinations, or external) ---
   if (image.url) {
     return (
       <div className="reunexus-image-container" style={{ maxWidth: "100%" }}>
-        <img
-          src={image.url}
-          alt={content || image.prompt || "Generated image"}
-          style={{ maxWidth: "100%", borderRadius: "8px" }}
-          loading="lazy"
-        />
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            background: "#0a0a0a",
+            borderRadius: "8px",
+            overflow: "hidden",
+            width: "100%",
+          }}
+        >
+          <img
+            src={image.url}
+            alt={content || image.prompt || "Generated image"}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "500px",
+              width: "auto",
+              height: "auto",
+              objectFit: "contain",
+              borderRadius: "8px",
+              display: "block",
+            }}
+            loading="lazy"
+          />
+        </div>
         {(content || image.prompt) && (
           <div className="text-sm text-gray-400 mt-2">{content || image.prompt}</div>
         )}

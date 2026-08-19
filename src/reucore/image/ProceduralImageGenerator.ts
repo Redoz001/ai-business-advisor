@@ -33,6 +33,7 @@ type SceneConfig = {
   night: boolean;
   neon: boolean;
   minimal: boolean;
+  animated: boolean;
 };
 
 const PALETTES: Palette[] = [
@@ -84,7 +85,7 @@ const PALETTES: Palette[] = [
 ];
 
 export class ProceduralImageGenerator {
-  generate(prompt: string): GeneratedImage {
+  generate(prompt: string, options?: { animated?: boolean }): GeneratedImage {
     const cleanPrompt = prompt.trim();
 
     if (!cleanPrompt) {
@@ -95,6 +96,7 @@ export class ProceduralImageGenerator {
     const random = this.random(seed);
     const palette = PALETTES[seed % PALETTES.length];
     const config = this.analyze(cleanPrompt);
+    config.animated = options?.animated ?? false;
 
     const width = this.detectWidth(cleanPrompt);
     const height = this.detectHeight(cleanPrompt);
@@ -114,6 +116,7 @@ export class ProceduralImageGenerator {
       palette,
       scene,
       seed,
+      animated: config.animated,
     });
 
     return {
@@ -130,20 +133,20 @@ export class ProceduralImageGenerator {
 
     let kind: SceneKind = "abstract";
 
-    if (/\b(city|dubai|skyline|building|street|urban)\b/.test(text)) {
+    if (/\b(city|dubai|skyline|building|street|urban|downtown)\b/.test(text)) {
       kind = "city";
     } else if (
-      /\b(mountain|forest|ocean|beach|desert|landscape|nature|sunset)\b/.test(
+      /\b(mountain|forest|ocean|beach|desert|landscape|nature|sunset|waterfall|river|lake|island|tropical|snow|ice)\b/.test(
         text
       )
     ) {
       kind = "landscape";
     } else if (
-      /\b(space|planet|galaxy|moon|stars|universe|cosmic)\b/.test(text)
+      /\b(space|planet|galaxy|moon|stars|universe|cosmic|nebula|astronaut|rocket)\b/.test(text)
     ) {
       kind = "space";
     } else if (
-      /\b(ai|technology|cyber|computer|network|robot|future|digital)\b/.test(
+      /\b(ai|technology|cyber|computer|network|robot|future|digital|circuit|hologram)\b/.test(
         text
       )
     ) {
@@ -161,9 +164,10 @@ export class ProceduralImageGenerator {
       title: this.makeTitle(prompt),
       subtitle: this.makeSubtitle(kind),
       cinematic: /\b(cinematic|dramatic|movie|film)\b/.test(text),
-      night: /\b(night|dark|midnight)\b/.test(text),
+      night: /\b(night|dark|midnight|evening)\b/.test(text),
       neon: /\b(neon|cyberpunk|glowing)\b/.test(text),
       minimal: /\b(minimal|minimalist|simple|clean)\b/.test(text),
+      animated: false,
     };
   }
 
@@ -174,8 +178,53 @@ export class ProceduralImageGenerator {
     palette: Palette;
     scene: string;
     seed: number;
+    animated: boolean;
   }): string {
     const safePrompt = this.escape(input.prompt);
+
+    const animationStyles = input.animated
+      ? `
+    <style>
+      @keyframes drift {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(${input.width * 0.15}px); }
+      }
+      @keyframes twinkle {
+        0%, 100% { opacity: 0.2; }
+        50% { opacity: 1; }
+      }
+      @keyframes flow {
+        0% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+        100% { transform: translateY(0); }
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 1; }
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      @keyframes rise {
+        0% { transform: translateY(0); opacity: 0; }
+        20% { opacity: 0.8; }
+        100% { transform: translateY(-${input.height * 0.3}px); opacity: 0; }
+      }
+      @keyframes shimmer {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .anim-drift { animation: drift ${6 + (input.seed % 4)}s ease-in-out infinite alternate; }
+      .anim-twinkle { animation: twinkle ${2 + (input.seed % 3)}s ease-in-out infinite; }
+      .anim-flow { animation: flow ${3 + (input.seed % 3)}s ease-in-out infinite; }
+      .anim-pulse { animation: pulse ${2 + (input.seed % 2)}s ease-in-out infinite; }
+      .anim-spin { animation: spin ${8 + (input.seed % 6)}s linear infinite; }
+      .anim-rise { animation: rise ${4 + (input.seed % 3)}s ease-out infinite; }
+    </style>
+    `
+      : "";
 
     return `
 <svg
@@ -187,6 +236,8 @@ export class ProceduralImageGenerator {
   aria-label="${safePrompt}"
 >
   <defs>
+    ${animationStyles}
+
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="${input.palette.backgroundA}" />
       <stop offset="100%" stop-color="${input.palette.backgroundB}" />
@@ -204,8 +255,23 @@ export class ProceduralImageGenerator {
       <stop offset="100%" stop-color="${input.palette.secondary}" />
     </linearGradient>
 
+    <linearGradient id="skyGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${input.palette.backgroundA}" />
+      <stop offset="60%" stop-color="${input.palette.backgroundB}" />
+      <stop offset="100%" stop-color="${input.palette.primary}" stop-opacity="0.6" />
+    </linearGradient>
+
+    <linearGradient id="waterGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${input.palette.secondary}" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="${input.palette.backgroundA}" stop-opacity="0.9" />
+    </linearGradient>
+
     <filter id="blurLarge">
       <feGaussianBlur stdDeviation="55" />
+    </filter>
+
+    <filter id="blurMedium">
+      <feGaussianBlur stdDeviation="18" />
     </filter>
 
     <filter id="softGlow">
@@ -224,6 +290,39 @@ export class ProceduralImageGenerator {
         flood-color="#000000"
         flood-opacity="0.55"
       />
+    </filter>
+
+    <filter id="cloudTexture">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="4" seed="${input.seed % 100}" />
+      <feColorMatrix type="saturate" values="0" />
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.15 0.3 0.15 0" />
+      </feComponentTransfer>
+      <feComposite operator="over" in2="SourceGraphic" />
+    </filter>
+
+    <filter id="waterTexture">
+      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.05" numOctaves="3" seed="${(input.seed + 7) % 100}" />
+      <feColorMatrix type="saturate" values="0" />
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.1 0.2 0.1 0" />
+      </feComponentTransfer>
+      <feComposite operator="over" in2="SourceGraphic" />
+    </filter>
+
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="${(input.seed + 13) % 100}" />
+      <feColorMatrix type="saturate" values="0" />
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.05" />
+      </feComponentTransfer>
+      <feComposite operator="over" in2="SourceGraphic" />
+    </filter>
+
+    <filter id="lighting3d">
+      <feDiffuseLighting in="SourceGraphic" surfaceScale="3" diffuseConstant="1.2" lighting-color="#ffffff">
+        <feDistantLight azimuth="225" elevation="45" />
+      </feDiffuseLighting>
     </filter>
 
     <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
@@ -249,6 +348,8 @@ export class ProceduralImageGenerator {
   />
 
   ${input.scene}
+
+  <rect width="100%" height="100%" filter="url(#grain)" opacity="0.4" />
 
   <metadata>
     ReuNexus procedural image
@@ -299,6 +400,7 @@ export class ProceduralImageGenerator {
   ): string {
     const ground = height * 0.82;
     const buildings: string[] = [];
+    const reflections: string[] = [];
 
     let x = 0;
 
@@ -312,6 +414,7 @@ export class ProceduralImageGenerator {
       for (let wx = x + 14; wx < x + buildingWidth - 10; wx += 22) {
         for (let wy = y + 20; wy < ground - 18; wy += 26) {
           if (random() > 0.34) {
+            const isLit = random() > 0.3;
             windows.push(`
               <rect
                 x="${wx.toFixed(1)}"
@@ -319,13 +422,27 @@ export class ProceduralImageGenerator {
                 width="7"
                 height="11"
                 rx="2"
-                fill="${palette.accent}"
-                opacity="${(0.35 + random() * 0.65).toFixed(2)}"
+                fill="${isLit ? palette.accent : "#1a1a2e"}"
+                opacity="${isLit ? (0.35 + random() * 0.65).toFixed(2) : "0.3"}"
+                ${config.animated ? 'class="anim-twinkle"' : ""}
               />
             `);
           }
         }
       }
+
+      // Building reflection on ground
+      reflections.push(`
+        <rect
+          x="${x.toFixed(1)}"
+          y="${ground}"
+          width="${buildingWidth.toFixed(1)}"
+          height="${(buildingHeight * 0.15).toFixed(1)}"
+          fill="${palette.primary}"
+          opacity="0.08"
+          transform="scale(1, -1) translate(0, -${(ground * 2).toFixed(1)})"
+        />
+      `);
 
       buildings.push(`
         <g filter="url(#shadow)">
@@ -339,12 +456,33 @@ export class ProceduralImageGenerator {
             stroke="${palette.primary}"
             stroke-opacity="${config.neon ? 0.7 : 0.22}"
           />
+          <rect
+            x="${x.toFixed(1)}"
+            y="${y.toFixed(1)}"
+            width="${buildingWidth.toFixed(1)}"
+            height="${(buildingHeight * 0.12).toFixed(1)}"
+            fill="${palette.primary}"
+            opacity="0.15"
+          />
           ${windows.join("")}
         </g>
       `);
 
       x += buildingWidth + 8;
     }
+
+    // Animated traffic lights on the street
+    const trafficLights = config.animated
+      ? `
+      <g class="anim-pulse">
+        <circle cx="${width * 0.2}" cy="${ground - 8}" r="3" fill="#ff4444" />
+        <circle cx="${width * 0.35}" cy="${ground - 8}" r="3" fill="#ffaa00" />
+        <circle cx="${width * 0.5}" cy="${ground - 8}" r="3" fill="#44ff44" />
+        <circle cx="${width * 0.65}" cy="${ground - 8}" r="3" fill="#ff4444" />
+        <circle cx="${width * 0.8}" cy="${ground - 8}" r="3" fill="#ffaa00" />
+      </g>
+      `
+      : "";
 
     return `
       <circle
@@ -354,9 +492,11 @@ export class ProceduralImageGenerator {
         fill="${palette.accent}"
         opacity="0.75"
         filter="url(#softGlow)"
+        ${config.animated ? 'class="anim-pulse"' : ""}
       />
 
       ${buildings.join("")}
+      ${reflections.join("")}
 
       <path
         d="M0 ${ground} C ${width * 0.25} ${ground - 35},
@@ -364,6 +504,8 @@ export class ProceduralImageGenerator {
            L ${width} ${height} L 0 ${height} Z"
         fill="#020308"
       />
+
+      ${trafficLights}
 
       ${this.renderHeading(config, palette, width, height)}
     `;
@@ -378,6 +520,54 @@ export class ProceduralImageGenerator {
   ): string {
     const sunX = width * (0.62 + random() * 0.18);
     const sunY = height * 0.25;
+    const isWater = /\b(ocean|beach|sea|water|lake|river)\b/.test(config.title.toLowerCase());
+    const isSnow = /\b(snow|ice|winter|mountain)\b/.test(config.title.toLowerCase());
+
+    // Clouds - animated if video
+    const clouds = config.animated
+      ? `
+      <g class="anim-drift" filter="url(#cloudTexture)">
+        <ellipse cx="${width * 0.2}" cy="${height * 0.15}" rx="${width * 0.12}" ry="${height * 0.04}" fill="#ffffff" opacity="0.3" />
+        <ellipse cx="${width * 0.5}" cy="${height * 0.1}" rx="${width * 0.15}" ry="${height * 0.05}" fill="#ffffff" opacity="0.25" />
+        <ellipse cx="${width * 0.8}" cy="${height * 0.18}" rx="${width * 0.1}" ry="${height * 0.035}" fill="#ffffff" opacity="0.2" />
+      </g>
+      `
+      : `
+      <g filter="url(#cloudTexture)">
+        <ellipse cx="${width * 0.2}" cy="${height * 0.15}" rx="${width * 0.12}" ry="${height * 0.04}" fill="#ffffff" opacity="0.3" />
+        <ellipse cx="${width * 0.5}" cy="${height * 0.1}" rx="${width * 0.15}" ry="${height * 0.05}" fill="#ffffff" opacity="0.25" />
+        <ellipse cx="${width * 0.8}" cy="${height * 0.18}" rx="${width * 0.1}" ry="${height * 0.035}" fill="#ffffff" opacity="0.2" />
+      </g>
+      `;
+
+    // Water reflection if water scene
+    const waterReflection = isWater
+      ? `
+      <g filter="url(#waterTexture)" opacity="0.5">
+        <ellipse cx="${sunX}" cy="${height * 0.55}" rx="${height * 0.08}" ry="${height * 0.02}" fill="${palette.accent}" opacity="0.4" />
+        <ellipse cx="${sunX}" cy="${height * 0.6}" rx="${height * 0.06}" ry="${height * 0.015}" fill="${palette.accent}" opacity="0.3" />
+        <ellipse cx="${sunX}" cy="${height * 0.65}" rx="${height * 0.04}" ry="${height * 0.01}" fill="${palette.accent}" opacity="0.2" />
+      </g>
+      `
+      : "";
+
+    // Snow particles if snow scene
+    const snowParticles = isSnow && config.animated
+      ? `
+      <g>
+        ${Array.from({ length: 30 }, (_, i) => `
+          <circle
+            cx="${(random() * width).toFixed(1)}"
+            cy="${(random() * height * 0.5).toFixed(1)}"
+            r="${(1 + random() * 2).toFixed(1)}"
+            fill="#ffffff"
+            class="anim-rise"
+            style="animation-delay: ${(random() * 3).toFixed(1)}s"
+          />
+        `).join("")}
+      </g>
+      `
+      : "";
 
     return `
       <circle
@@ -387,7 +577,10 @@ export class ProceduralImageGenerator {
         fill="${palette.accent}"
         opacity="0.9"
         filter="url(#softGlow)"
+        ${config.animated ? 'class="anim-pulse"' : ""}
       />
+
+      ${clouds}
 
       <path
         d="M0 ${height * 0.72}
@@ -401,6 +594,7 @@ export class ProceduralImageGenerator {
            L0 ${height} Z"
         fill="${palette.secondary}"
         opacity="0.42"
+        filter="url(#lighting3d)"
       />
 
       <path
@@ -415,6 +609,7 @@ export class ProceduralImageGenerator {
            L 0 ${height} Z"
         fill="${palette.primary}"
         opacity="0.72"
+        filter="url(#lighting3d)"
       />
 
       <path
@@ -426,6 +621,9 @@ export class ProceduralImageGenerator {
            L0 ${height} Z"
         fill="#020617"
       />
+
+      ${waterReflection}
+      ${snowParticles}
 
       ${this.renderHeading(config, palette, width, height)}
     `;
@@ -448,11 +646,35 @@ export class ProceduralImageGenerator {
           r="${(0.6 + random() * 2.2).toFixed(1)}"
           fill="#ffffff"
           opacity="${(0.25 + random() * 0.75).toFixed(2)}"
+          ${config.animated ? `class="anim-twinkle" style="animation-delay: ${(random() * 3).toFixed(1)}s"` : ""}
         />
       `);
     }
 
+    // Nebula effect
+    const nebula = `
+      <ellipse
+        cx="${width * 0.3}"
+        cy="${height * 0.3}"
+        rx="${width * 0.25}"
+        ry="${height * 0.2}"
+        fill="${palette.primary}"
+        opacity="0.15"
+        filter="url(#blurLarge)"
+      />
+      <ellipse
+        cx="${width * 0.7}"
+        cy="${height * 0.6}"
+        rx="${width * 0.2}"
+        ry="${height * 0.15}"
+        fill="${palette.accent}"
+        opacity="0.12"
+        filter="url(#blurLarge)"
+      />
+    `;
+
     return `
+      ${nebula}
       ${stars.join("")}
 
       <ellipse
@@ -462,6 +684,7 @@ export class ProceduralImageGenerator {
         ry="${height * 0.23}"
         fill="url(#objectGradient)"
         filter="url(#shadow)"
+        ${config.animated ? 'class="anim-flow"' : ""}
       />
 
       <ellipse
@@ -475,6 +698,7 @@ export class ProceduralImageGenerator {
         stroke-opacity="0.72"
         transform="rotate(-14 ${width * 0.7} ${height * 0.42})"
         filter="url(#softGlow)"
+        ${config.animated ? 'class="anim-spin"' : ""}
       />
 
       <circle
@@ -521,6 +745,7 @@ export class ProceduralImageGenerator {
           stroke="${palette.accent}"
           stroke-opacity="0.22"
           stroke-width="2"
+          ${config.animated ? 'class="anim-pulse"' : ""}
         />
       `);
     }
@@ -531,7 +756,7 @@ export class ProceduralImageGenerator {
 
         ${nodes
           .map(
-            (node) => `
+            (node, i) => `
           <circle
             cx="${node.x}"
             cy="${node.y}"
@@ -540,6 +765,7 @@ export class ProceduralImageGenerator {
             stroke="${palette.accent}"
             stroke-width="2"
             filter="url(#softGlow)"
+            ${config.animated ? `class="anim-pulse" style="animation-delay: ${(i * 0.2).toFixed(1)}s"` : ""}
           />
         `
           )
@@ -549,6 +775,7 @@ export class ProceduralImageGenerator {
       <g
         transform="translate(${width * 0.72} ${height * 0.45})"
         filter="url(#shadow)"
+        ${config.animated ? 'class="anim-flow"' : ""}
       >
         <circle
           r="${height * 0.17}"
@@ -595,6 +822,7 @@ export class ProceduralImageGenerator {
       <g
         transform="translate(${centerX} ${centerY})"
         filter="url(#shadow)"
+        ${config.animated ? 'class="anim-flow"' : ""}
       >
         <rect
           x="-${size}"
@@ -653,6 +881,7 @@ export class ProceduralImageGenerator {
           stroke="${i % 2 === 0 ? palette.accent : palette.primary}"
           stroke-width="${2 + random() * 4}"
           stroke-opacity="${0.18 + i * 0.08}"
+          ${config.animated ? `class="anim-pulse" style="animation-delay: ${(i * 0.3).toFixed(1)}s"` : ""}
         />
       `);
     }
@@ -670,6 +899,7 @@ export class ProceduralImageGenerator {
         opacity="0.82"
         transform="rotate(8 ${width * 0.73} ${height * 0.47})"
         filter="url(#shadow)"
+        ${config.animated ? 'class="anim-flow"' : ""}
       />
 
       ${this.renderHeading(config, palette, width, height)}
@@ -700,6 +930,7 @@ export class ProceduralImageGenerator {
           fill="${i % 2 === 0 ? palette.primary : palette.secondary}"
           opacity="${(0.08 + random() * 0.24).toFixed(2)}"
           transform="rotate(${(-35 + random() * 70).toFixed(1)} ${x} ${y})"
+          ${config.animated ? `class="anim-flow" style="animation-delay: ${(i * 0.2).toFixed(1)}s"` : ""}
         />
       `);
     }
@@ -718,6 +949,7 @@ export class ProceduralImageGenerator {
         fill="url(#objectGradient)"
         opacity="0.8"
         filter="url(#shadow)"
+        ${config.animated ? 'class="anim-flow"' : ""}
       />
 
       ${this.renderHeading(config, palette, width, height)}
@@ -800,7 +1032,7 @@ export class ProceduralImageGenerator {
   private makeTitle(prompt: string): string {
     const cleaned = prompt
       .replace(
-        /\b(create|generate|make|draw|design|render|produce|an|a|the|image|picture|poster|logo|of|for|me|please)\b/gi,
+        /\b(create|generate|make|draw|design|render|produce|an|a|the|image|picture|poster|logo|of|for|me|please|video|animate|animation)\b/gi,
         " "
       )
       .replace(/\s+/g, " ")
@@ -856,10 +1088,10 @@ export class ProceduralImageGenerator {
 
   private escape(value: string): string {
     return value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
+      .replace(/&/g, "\x26amp;")
+      .replace(/</g, "\x26lt;")
+      .replace(/>/g, "\x26gt;")
+      .replace(/"/g, "\x26quot;")
+      .replace(/'/g, "\x26apos;");
   }
 }

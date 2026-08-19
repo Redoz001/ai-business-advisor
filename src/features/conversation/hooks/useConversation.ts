@@ -217,6 +217,34 @@ export function useConversation({
           MessageService.requestTextResponse
         );
 
+      // For image/video, keep loading state until the visual is actually rendered
+      if (result.type === "image" || result.type === "video") {
+        // Show a "generating" message while the visual is being prepared
+        updateMessage(
+          assistantMessage.id,
+          {
+            type: result.type,
+            content: result.type === "video" ? "Generating video..." : "Generating image...",
+            metadata: result.metadata,
+            status: "pending",
+          }
+        );
+
+        // Wait for the browser to actually load/display the visual
+        if (result.type === "image" && result.image?.url) {
+          const imageUrl = result.image.url;
+          await new Promise<void>((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            img.src = imageUrl;
+          });
+        } else if (result.type === "video" && result.video?.url) {
+          // Small buffer to ensure the video element can start loading
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+
       updateMessage(
         assistantMessage.id,
         {

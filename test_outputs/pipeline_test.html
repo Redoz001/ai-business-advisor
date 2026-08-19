@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ReuNexus Pipeline Test — Image & Video</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    padding: 24px;
+  }
+  h1 { text-align: center; margin-bottom: 8px; font-size: 26px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 32px; font-size: 14px; }
+  .test-area {
+    max-width: 900px;
+    margin: 0 auto 40px;
+    background: #12121a;
+    border: 1px solid #2a2a3a;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .test-area h2 { font-size: 16px; margin-bottom: 12px; color: #ddd; }
+  .prompt-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .prompt-row input {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    background: #1a1a2a;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+  }
+  .prompt-row input:focus { border-color: #7c3aed; }
+  .prompt-row button {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(135deg, #7c3aed, #2563eb);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .prompt-row button:hover { opacity: 0.85; }
+  .prompt-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .quick-prompts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .quick {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid #333;
+    background: #1a1a2a;
+    color: #aaa;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .quick:hover { border-color: #7c3aed; color: #fff; }
+  .result {
+    margin-top: 16px;
+    border-top: 1px solid #2a2a3a;
+    padding-top: 16px;
+  }
+  .result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #aaa;
+  }
+  .status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .status-success { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+  .status-error { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+  .status-pending { background: rgba(250, 204, 21, 0.2); color: #facc15; }
+  .result-body {
+    background: #0d0d15;
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .result-body svg, .result-body img, .result-body video {
+    width: 100%;
+    height: auto;
+    display: block;
+    max-height: 500px;
+  }
+  .result-body .placeholder {
+    color: #666;
+    font-size: 13px;
+    padding: 40px;
+    text-align: center;
+  }
+  .result-meta {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #888;
+    font-size: 13px;
+  }
+  .loader .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid #333;
+    border-top-color: #7c3aed;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .log {
+    margin-top: 12px;
+    background: #0d0d15;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #888;
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h1>🧪 ReuNexus Pipeline Test</h1>
+<div class="subtitle">Tests the actual RequestPipeline — image & video generation through the real app code</div>
+
+<div class="test-area">
+  <h2>🎬 Video Generation Test</h2>
+  <div class="quick-prompts">
+    <button class="quick" onclick="setVideoPrompt('create a video of a futuristic city skyline at night with twinkling windows')">🏙️ City Video</button>
+    <button class="quick" onclick="setVideoPrompt('create a video of a sunset over the ocean with drifting clouds')">🌅 Ocean Video</button>
+    <button class="quick" onclick="setVideoPrompt('create a video of a distant galaxy with twinkling stars')">🌌 Galaxy Video</button>
+    <button class="quick" onclick="setVideoPrompt('create a video of a cyberpunk AI network with pulsing connections')">🤖 AI Network Video</button>
+  </div>
+  <div class="prompt-row">
+    <input id="videoPrompt" placeholder="Type a video prompt... e.g. create a video of a futuristic city" />
+    <button id="videoBtn" onclick="testVideo()">▶ Generate Video</button>
+  </div>
+  <div id="videoResult"></div>
+</div>
+
+<div class="test-area">
+  <h2>🖼️ Image Generation Test</h2>
+  <div class="quick-prompts">
+    <button class="quick" onclick="setImagePrompt('generate an image of a futuristic city skyline at night with neon lights')">🏙️ City</button>
+    <button class="quick" onclick="setImagePrompt('generate an image of a sunset over the ocean with waves')">🌅 Ocean</button>
+    <button class="quick" onclick="setImagePrompt('generate an image of a distant galaxy with a glowing nebula')">🌌 Galaxy</button>
+    <button class="quick" onclick="setImagePrompt('generate an image of a cyberpunk AI network')">🤖 AI Network</button>
+  </div>
+  <div class="prompt-row">
+    <input id="imagePrompt" placeholder="Type an image prompt... e.g. generate an image of a futuristic city" />
+    <button id="imageBtn" onclick="testImage()">▶ Generate Image</button>
+  </div>
+  <div id="imageResult"></div>
+</div>
+
+<script type="module">
+  import { generateVisual } from "../src/services/reucore.ts";
+
+  function setVideoPrompt(text) {
+    document.getElementById("videoPrompt").value = text;
+  }
+  function setImagePrompt(text) {
+    document.getElementById("imagePrompt").value = text;
+  }
+  window.setVideoPrompt = setVideoPrompt;
+  window.setImagePrompt = setImagePrompt;
+
+  function showLoader(containerId, text) {
+    document.getElementById(containerId).innerHTML = `
+      <div class="loader"><div class="spinner"></div>${text}</div>
+    `;
+  }
+
+  function showResult(containerId, { success, type, data, meta, error }) {
+    const badge = success ? '<span class="status-badge status-success">✅ SUCCESS</span>' : '<span class="status-badge status-error">❌ ERROR</span>';
+    let body = "";
+    let metaHtml = "";
+
+    if (success && type === "video" && data?.video?.url) {
+      body = `<video controls autoplay muted loop style="max-height:500px">
+        <source src="${data.video.url}" type="${data.video.mimeType || "video/webm"}" />
+        Your browser does not support video playback.
+      </video>`;
+      metaHtml = `
+        <span>MIME: ${data.video.mimeType || "video/webm"}</span>
+        <span>Duration: ${data.video.duration || "?"}s</span>
+        <span>Size: ${data.video.url ? "blob URL" : "N/A"}</span>
+      `;
+    } else if (success && type === "image" && data?.url) {
+      body = `<img src="${data.url}" alt="Generated image" style="max-height:500px;width:auto;margin:0 auto" />`;
+      metaHtml = `
+        <span>${data.width || "?"} × ${data.height || "?"}</span>
+        <span>Seed: ${data.seed || "?"}</span>
+        <span>Real AI Image (Pollinations.ai)</span>
+      `;
+    } else if (success && type === "image" && data?.svg) {
+      body = data.svg;
+      metaHtml = `
+        <span>${data.width || "?"} × ${data.height || "?"}</span>
+        <span>Seed: ${data.seed || "?"}</span>
+        <span>SVG: ${Math.round((data.svg?.length || 0) / 1024)} KB</span>
+      `;
+    } else {
+      body = `<div class="placeholder">${error || "No result returned"}</div>`;
+    }
+
+    document.getElementById(containerId).innerHTML = `
+      <div class="result">
+        <div class="result-header">
+          <span>${meta?.label || "Result"}</span>
+          ${badge}
+        </div>
+        <div class="result-body">${body}</div>
+        <div class="result-meta">${metaHtml}</div>
+      </div>
+    `;
+  }
+
+  window.testVideo = async function() {
+    const prompt = document.getElementById("videoPrompt").value.trim();
+    if (!prompt) { alert("Enter a video prompt first"); return; }
+
+    const btn = document.getElementById("videoBtn");
+    btn.disabled = true;
+    showLoader("videoResult", `Generating video: "${prompt}"...`);
+
+    try {
+      const result = await generateVisual({
+        prompt,
+        outputType: "video",
+        quality: "standard",
+      });
+
+      console.log("Video result:", result);
+
+      if (result.success && result.video?.url) {
+        showResult("videoResult", {
+          success: true,
+          type: "video",
+          data: result,
+          meta: { label: `🎬 Video: "${prompt}"` },
+        });
+      } else {
+        showResult("videoResult", {
+          success: false,
+          type: "video",
+          error: result.error || "Video generation failed",
+          meta: { label: `🎬 Video: "${prompt}"` },
+        });
+      }
+    } catch (err) {
+      console.error("Video test error:", err);
+      showResult("videoResult", {
+        success: false,
+        type: "video",
+        error: err.message,
+        meta: { label: `🎬 Video: "${prompt}"` },
+      });
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  window.testImage = async function() {
+    const prompt = document.getElementById("imagePrompt").value.trim();
+    if (!prompt) { alert("Enter an image prompt first"); return; }
+
+    const btn = document.getElementById("imageBtn");
+    btn.disabled = true;
+    showLoader("imageResult", `Generating image: "${prompt}"...`);
+
+    try {
+      const result = await generateVisual({
+        prompt,
+        outputType: "image",
+        quality: "standard",
+      });
+
+      console.log("Image result:", result);
+
+      if (result.success && (result.svg || result.url)) {
+        showResult("imageResult", {
+          success: true,
+          type: "image",
+          data: result,
+          meta: { label: `🖼️ Image: "${prompt}"` },
+        });
+      } else {
+        showResult("imageResult", {
+          success: false,
+          type: "image",
+          error: result.error || "Image generation failed",
+          meta: { label: `🖼️ Image: "${prompt}"` },
+        });
+      }
+    } catch (err) {
+      console.error("Image test error:", err);
+      showResult("imageResult", {
+        success: false,
+        type: "image",
+        error: err.message,
+        meta: { label: `🖼️ Image: "${prompt}"` },
+      });
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // Auto-run a video test on load to demonstrate
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      document.getElementById("videoPrompt").value = "create a video of a futuristic city skyline at night with twinkling windows";
+      testVideo();
+    }, 500);
+  });
+</script>
+
+</body>
+</html>

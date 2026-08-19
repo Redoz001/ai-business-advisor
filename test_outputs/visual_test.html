@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ReuCore Visual Test - Enhanced</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    padding: 24px;
+  }
+  h1 { text-align: center; margin-bottom: 8px; font-size: 28px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 32px; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #12121a;
+    border: 1px solid #2a2a3a;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(100, 100, 255, 0.15);
+  }
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid #2a2a3a;
+    font-size: 13px;
+    font-weight: 600;
+    color: #aaa;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+  .badge.city { background: rgba(124, 58, 237, 0.2); color: #a78bfa; }
+  .badge.landscape { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+  .badge.space { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+  .badge.tech { background: rgba(236, 72, 153, 0.2); color: #f472b6; }
+  .badge.abstract { background: rgba(250, 204, 21, 0.2); color: #facc15; }
+  .card-body { padding: 0; position: relative; }
+  .card-body svg, .card-body img, .card-body video {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .card-body .prompt-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 12px 8px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
+    font-size: 12px;
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .card:hover .card-body .prompt-overlay { opacity: 1; }
+  .card-footer {
+    padding: 10px 16px;
+    border-top: 1px solid #2a2a3a;
+    font-size: 11px;
+    color: #666;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .stats { display: flex; gap: 12px; margin-left: auto; }
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .tab {
+    padding: 8px 20px;
+    border-radius: 24px;
+    border: 1px solid #333;
+    background: #1a1a2a;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  .tab:hover { border-color: #666; color: #fff; }
+  .tab.active { background: linear-gradient(135deg, #7c3aed, #2563eb); border-color: transparent; color: #fff; }
+  .section { max-width: 1400px; margin: 0 auto 40px; }
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ddd;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-sub {
+    color: #777;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: #888;
+    font-size: 13px;
+  }
+  .loader .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid #333;
+    border-top-color: #7c3aed;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<h1>🎨 ReuCore Visual Engine — Enhanced Test</h1>
+<div class="subtitle">Generating with turbulence textures, 3D lighting, film grain, cloud/water filters, and CSS animations</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('images')">🖼️ Images</button>
+  <button class="tab" onclick="showTab('videos')">🎬 Videos</button>
+</div>
+
+<div id="images" class="section">
+  <div class="section-title">🖼️ Image Generation</div>
+  <div class="section-sub">Click a card to see the prompt. All images generated locally with no API.</div>
+  <div class="grid" id="imageGrid">
+    <div class="loader"><div class="spinner"></div>Generating enhanced images...</div>
+  </div>
+</div>
+
+<div id="videos" class="section" style="display:none">
+  <div class="section-title">🎬 Video Generation</div>
+  <div class="section-sub">CSS-animated SVG elements + Ken Burns camera motion. Generated locally with MediaRecorder.</div>
+  <div class="grid" id="videoGrid">
+    <div class="loader"><div class="spinner"></div>Generating animated videos...</div>
+  </div>
+</div>
+
+<script type="module">
+  import { ProceduralImageGenerator } from "../src/reucore/image/ProceduralImageGenerator.ts";
+
+  const generator = new ProceduralImageGenerator();
+
+  const imagePrompts = [
+    "futuristic city skyline at night with neon lights",
+    "sunset over the ocean with waves and clouds",
+    "distant galaxy with stars and a glowing nebula",
+    "cyberpunk AI network with connected nodes and a central core",
+    "abstract flowing shapes with vibrant colors",
+  ];
+
+  const videoPrompts = [
+    "futuristic city skyline at night with twinkling windows",
+    "sunset over the ocean with drifting clouds and water reflections",
+    "distant galaxy with twinkling stars and a spinning planet ring",
+    "cyberpunk AI network with pulsing connections",
+  ];
+
+  function getKind(prompt) {
+    const p = prompt.toLowerCase();
+    if (p.includes("city")) return "city";
+    if (p.includes("ocean") || p.includes("sunset")) return "landscape";
+    if (p.includes("galaxy") || p.includes("nebula")) return "space";
+    if (p.includes("ai") || p.includes("cyberpunk")) return "tech";
+    return "abstract";
+  }
+
+  function badgeFor(kind) {
+    const labels = { city: "City", landscape: "Landscape", space: "Space", tech: "Technology", abstract: "Abstract" };
+    return `<span class="badge ${kind}">${labels[kind] || kind}</span>`;
+  }
+
+  function renderImage(prompt) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const generated = generator.generate(prompt);
+
+    card.innerHTML = `
+      <div class="card-header">
+        <span>${prompt}</span>
+        ${badgeFor(getKind(prompt))}
+      </div>
+      <div class="card-body">
+        ${generated.svg}
+        <div class="prompt-overlay">${prompt}</div>
+      </div>
+      <div class="card-footer">
+        <span>${generated.width} × ${generated.height}</span>
+        <span>Seed: ${generated.seed}</span>
+        <div class="stats">
+          <span>${Math.round(generated.svg.length / 1024)} KB</span>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  function renderVideo(prompt) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const generated = generator.generate(prompt, { animated: true });
+
+    card.innerHTML = `
+      <div class="card-header">
+        <span>${prompt}</span>
+        ${badgeFor(getKind(prompt))}
+      </div>
+      <div class="card-body">
+        ${generated.svg}
+        <div class="prompt-overlay">${prompt}</div>
+      </div>
+      <div class="card-footer">
+        <span>Animated SVG (CSS Keyframes)</span>
+        <div class="stats">
+          <span>${Math.round(generated.svg.length / 1024)} KB</span>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  // Render images
+  const imageGrid = document.getElementById("imageGrid");
+  imageGrid.innerHTML = "";
+  for (const prompt of imagePrompts) {
+    imageGrid.appendChild(renderImage(prompt));
+  }
+
+  // Render videos
+  const videoGrid = document.getElementById("videoGrid");
+  videoGrid.innerHTML = "";
+  for (const prompt of videoPrompts) {
+    videoGrid.appendChild(renderVideo(prompt));
+  }
+
+  window.showTab = function(tab) {
+    document.getElementById("images").style.display = tab === "images" ? "block" : "none";
+    document.getElementById("videos").style.display = tab === "videos" ? "block" : "none";
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    event.target.classList.add("active");
+  };
+</script>
+
+</body>
+</html>
