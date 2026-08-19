@@ -351,6 +351,68 @@ export function useConversation({
     setLoading(false);
   }, []);
 
+  const handleImageUpload = useCallback(async (file: File) => {
+    if (!file) return;
+
+    // Convert file to data URL and send as a message
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const prompt = `I uploaded an image. Please analyze this image and help me with it.`;
+
+      // Add user message with the uploaded image
+      const userMessage = createConversationMessage("user", prompt, {
+        type: "text",
+        image: { url: dataUrl },
+      });
+
+      setMessages((current) => [...current, userMessage]);
+
+      // Trigger AI response
+      setInput(prompt);
+      await sendMessage();
+    };
+    reader.readAsDataURL(file);
+  }, [sendMessage, setInput]);
+
+  const handleCameraCapture = useCallback(async (file: File) => {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const prompt = `I took a photo. Please analyze this image and help me with it.`;
+
+      const userMessage = createConversationMessage("user", prompt, {
+        type: "text",
+        image: { url: dataUrl },
+      });
+
+      setMessages((current) => [...current, userMessage]);
+      setInput(prompt);
+      await sendMessage();
+    };
+    reader.readAsDataURL(file);
+  }, [sendMessage, setInput]);
+
+  const handleDownloadImage = useCallback((url: string, filename: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "reunexus-image.png";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, []);
+
+  const handleDownloadVideo = useCallback((url: string, filename: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "reunexus-video.webm";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, []);
+
   return {
     messages,
     input,
@@ -361,6 +423,10 @@ export function useConversation({
     welcome,
     sendMessage,
     stop,
+    handleImageUpload,
+    handleCameraCapture,
+    handleDownloadImage,
+    handleDownloadVideo,
   };
 }
 

@@ -11,9 +11,10 @@ interface ImageMessageProps {
     height?: number;
     mimeType?: string;
   };
+  onDownload?: (url: string, filename: string) => void;
 }
 
-export default function ImageMessage({ content, image }: ImageMessageProps) {
+export default function ImageMessage({ content, image, onDownload }: ImageMessageProps) {
   if (!image) {
     return <div className="text-gray-400">No image data</div>;
   }
@@ -112,6 +113,14 @@ export default function ImageMessage({ content, image }: ImageMessageProps) {
         )}
         {image.width && image.height && (
           <div className="text-xs text-gray-500 mt-1">{image.width} × {image.height}</div>
+        )}
+        {onDownload && image.url && (
+          <button
+            onClick={() => onDownload(image.url!, "reunexus-image.png")}
+            className="mt-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-white transition hover:bg-zinc-700"
+          >
+            Download Image
+          </button>
         )}
       </div>
     );

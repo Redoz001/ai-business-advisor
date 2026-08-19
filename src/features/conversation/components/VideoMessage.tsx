@@ -5,11 +5,13 @@
 type VideoMessageProps = {
   content: string;
   video?: ConversationMessage["video"];
+  onDownload?: (url: string, filename: string) => void;
 };
 
 export default function VideoMessage({
   content,
   video,
+  onDownload,
 }: VideoMessageProps) {
   return (
     <div className="space-y-3">
@@ -52,6 +54,18 @@ export default function VideoMessage({
             but the video-rendering engine still needs to be connected.
           </p>
         </div>
+      )}
+
+      {onDownload && video?.url && (
+        <button
+          onClick={() => {
+            const url = video.url;
+            if (url) onDownload(url, "reunexus-video.webm");
+          }}
+          className="mt-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-white transition hover:bg-zinc-700"
+        >
+          Download Video
+        </button>
       )}
     </div>
   );

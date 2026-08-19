@@ -14,6 +14,8 @@ type ConversationProps = {
   welcome: string;
   username: string;
   loadingHistory: boolean;
+  onDownloadImage?: (url: string, filename: string) => void;
+  onDownloadVideo?: (url: string, filename: string) => void;
 };
 
 export default function Conversation({
@@ -21,6 +23,8 @@ export default function Conversation({
   welcome,
   username,
   loadingHistory,
+  onDownloadImage,
+  onDownloadVideo,
 }: ConversationProps) {
   const bottomRef =
     useRef<HTMLDivElement | null>(null);
@@ -67,6 +71,8 @@ export default function Conversation({
           >
             <MessageRenderer
               message={message}
+              onDownloadImage={onDownloadImage}
+              onDownloadVideo={onDownloadVideo}
             />
 
             {message.status === "streaming" && (

@@ -9,9 +9,11 @@ import type { ConversationMessage } from "../types/Message";
 
 type MessageRendererProps = {
   message: ConversationMessage;
+  onDownloadImage?: (url: string, filename: string) => void;
+  onDownloadVideo?: (url: string, filename: string) => void;
 };
 
-export default function MessageRenderer({ message }: MessageRendererProps) {
+export default function MessageRenderer({ message, onDownloadImage, onDownloadVideo }: MessageRendererProps) {
   // --- DEBUG LOG ---
   console.log("📨 MessageRenderer received:", message);
 
@@ -68,7 +70,7 @@ export default function MessageRenderer({ message }: MessageRendererProps) {
     }
 
     console.log("🖼️ IMAGE DATA:", imageData);
-    return <ImageMessage content={message.content} image={imageData} />;
+    return <ImageMessage content={message.content} image={imageData} onDownload={onDownloadImage} />;
   }
 
   // --- VIDEO HANDLING ---
@@ -97,7 +99,7 @@ export default function MessageRenderer({ message }: MessageRendererProps) {
       );
     }
 
-    return <VideoMessage content={message.content} video={videoData} />;
+    return <VideoMessage content={message.content} video={videoData} onDownload={onDownloadVideo} />;
   }
 
   // --- CODE ---

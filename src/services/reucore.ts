@@ -24,15 +24,6 @@ const imageGenerator = new ProceduralImageGenerator();
 // Pollinations.ai - free AI image generation, no API key needed
 const POLLINATIONS_URL = "https://image.pollinations.ai/prompt/";
 
-// Runway API for real video generation
-const RUNWAY_API_BASE = "https://api.dev.runwayml.com/v1";
-const RUNWAY_API_VERSION = "2024-11-06";
-
-function getRunwayApiKey(): string | null {
-  const key = (import.meta as any).env?.VITE_RUNWAY_API_KEY;
-  return key || null;
-}
-
 async function generateRealImage(prompt: string, width = 1024, height = 1024, seed?: number): Promise<string | null> {
   try {
     const encodedPrompt = encodeURIComponent(prompt);
@@ -52,107 +43,39 @@ async function generateRealImage(prompt: string, width = 1024, height = 1024, se
   }
 }
 
-// Real video generation using Runway API
-async function generateRunwayVideo(prompt: string, imageUrl: string): Promise<string | null> {
-  const apiKey = getRunwayApiKey();
-  if (!apiKey) {
-    console.warn("No Runway API key available");
-    return null;
-  }
+// Generate multiple frames for animation storyboard
+async function generateAnimationFrames(prompt: string, frameCount: number): Promise<HTMLImageElement[]> {
+  const frames: HTMLImageElement[] = [];
+  const motionPrompts = [
+    `${prompt}, action shot, dynamic movement, energetic`,
+    `${prompt}, mid-motion, action frozen in time, cinematic`,
+    `${prompt}, dramatic moment, peak action, intense`,
+    `${prompt}, wide shot, full scene, establishing view`,
+    `${prompt}, slow motion, detailed, high quality`,
+    `${prompt}, fast motion, blur effect, energetic`,
+  ];
 
-  try {
-    const headers = {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "X-Runway-Version": RUNWAY_API_VERSION,
-    };
+  for (let i = 0; i < frameCount; i++) {
+    const motionPrompt = motionPrompts[i % motionPrompts.length];
+    const seed = 1000 + i * 137;
+    const url = await generateRealImage(motionPrompt, 1024, 1024, seed);
+    if (!url) continue;
 
-    // Use gen4_image_turbo for image-to-video generation
-    const payload = {
-      model: "gen4_image_turbo",
-      promptText: prompt,
-      image: imageUrl,
-      ratio: "1024:1024",
-      duration: 4,
-    };
-
-    console.log("Starting Runway video generation...");
-
-    // Initialize task
-    const initResponse = await fetch(`${RUNWAY_API_BASE}/image_to_video`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject();
+      img.src = url;
     });
-
-    const initBody = await initResponse.text();
-    if (!initResponse.ok) {
-      console.error("Runway initialization failed:", initBody);
-      return null;
-    }
-
-    const initData = JSON.parse(initBody);
-    const taskId = initData.id;
-
-    if (!taskId) {
-      console.error("Runway did not return a task ID:", initBody);
-      return null;
-    }
-
-    console.log("Runway task created:", taskId);
-
-    // Poll for completion
-    const maxAttempts = 30; // 2.5 minutes max
-    const pollInterval = 5000;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      await new Promise((r) => setTimeout(r, pollInterval));
-
-      const statusResponse = await fetch(`${RUNWAY_API_BASE}/tasks/${taskId}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "X-Runway-Version": RUNWAY_API_VERSION,
-        },
-      });
-
-      const statusBody = await statusResponse.text();
-      if (!statusResponse.ok) {
-        console.error("Runway status check failed:", statusBody);
-        return null;
-      }
-
-      const task = JSON.parse(statusBody);
-      const status = String(task.status || "UNKNOWN").toUpperCase();
-
-      console.log(`Runway task ${taskId}: attempt ${attempt}/${maxAttempts}, status: ${status}`);
-
-      if (status === "SUCCEEDED") {
-        const outputUrl = task.output_url || task.output;
-        if (outputUrl) {
-          console.log("Runway video generation completed:", outputUrl);
-          return outputUrl;
-        }
-        console.error("Runway succeeded but no output URL:", statusBody);
-        return null;
-      }
-
-      if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED") {
-        console.error("Runway task failed:", task.failure || task.error || statusBody);
-        return null;
-      }
-    }
-
-    console.error("Runway video generation timed out");
-    return null;
-  } catch (err) {
-    console.error("Runway video generation error:", err);
-    return null;
+    frames.push(img);
   }
+
+  return frames;
 }
 
-// Fallback: simple animated video from single image
-async function generateFallbackVideo(prompt: string, imageUrl: string): Promise<string | null> {
+// Fallback: multi-frame animation storyboard
+async function generateFallbackVideo(prompt: string, baseImageUrl: string): Promise<string | null> {
   try {
     const width = 1024;
     const height = 1024;
@@ -166,13 +89,14 @@ async function generateFallbackVideo(prompt: string, imageUrl: string): Promise<
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject();
-      img.src = imageUrl;
-    });
+    // Try to get multiple frames for animation
+    const frames = await generateAnimationFrames(prompt, 4);
+
+    // If we got multiple frames, use them; otherwise use the single base image
+    const hasMultipleFrames = frames.length > 1;
+    const primaryImg = hasMultipleFrames ? frames[0] : await loadImage(baseImageUrl);
+
+    if (!primaryImg) return null;
 
     const stream = canvas.captureStream(fps);
     const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
@@ -192,18 +116,55 @@ async function generateFallbackVideo(prompt: string, imageUrl: string): Promise<
     recorder.start();
 
     for (let i = 0; i < totalFrames; i++) {
-      const t = i / (totalFrames - 1);
-      const scale = 1 + Math.sin(t * Math.PI) * 0.05;
-      const offsetX = Math.sin(t * Math.PI * 2) * 20;
-      const offsetY = Math.cos(t * Math.PI * 2.3) * 15;
+      const t = i / Math.max(1, totalFrames - 1);
 
-      ctx.clearRect(0, 0, width, height);
-      ctx.save();
-      ctx.translate(width / 2 + offsetX, height / 2 + offsetY);
-      ctx.rotate(Math.sin(t * Math.PI * 1.7) * 0.01);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, -width / 2, -height / 2, width, height);
-      ctx.restore();
+      if (hasMultipleFrames) {
+        // Crossfade between frames
+        const frameProgress = t * (frames.length - 1);
+        const frameIndex = Math.min(frames.length - 1, Math.floor(frameProgress));
+        const nextIndex = Math.min(frames.length - 1, frameIndex + 1);
+        const blend = frameProgress - frameIndex;
+
+        const currentFrame = frames[frameIndex];
+        const nextFrame = frames[nextIndex];
+
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw current frame with camera motion
+        const scale = 1 + Math.sin(t * Math.PI) * 0.03;
+        const offsetX = Math.sin(t * Math.PI * 2) * 15;
+        const offsetY = Math.cos(t * Math.PI * 2.3) * 10;
+
+        ctx.save();
+        ctx.translate(width / 2 + offsetX, height / 2 + offsetY);
+        ctx.scale(scale, scale);
+        ctx.drawImage(currentFrame, -width / 2, -height / 2, width, height);
+        ctx.restore();
+
+        // Crossfade to next frame
+        if (blend > 0.1 && nextFrame !== currentFrame) {
+          ctx.globalAlpha = blend * 0.5;
+          ctx.save();
+          ctx.translate(width / 2 - offsetX, height / 2 - offsetY);
+          ctx.scale(1.02, 1.02);
+          ctx.drawImage(nextFrame, -width / 2, -height / 2, width, height);
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        // Single image with camera motion
+        const scale = 1 + Math.sin(t * Math.PI) * 0.04;
+        const offsetX = Math.sin(t * Math.PI * 2) * 20;
+        const offsetY = Math.cos(t * Math.PI * 2.3) * 15;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.save();
+        ctx.translate(width / 2 + offsetX, height / 2 + offsetY);
+        ctx.rotate(Math.sin(t * Math.PI * 1.7) * 0.008);
+        ctx.scale(scale, scale);
+        ctx.drawImage(primaryImg, -width / 2, -height / 2, width, height);
+        ctx.restore();
+      }
 
       await new Promise((r) => setTimeout(r, 1000 / fps));
     }
@@ -213,6 +174,22 @@ async function generateFallbackVideo(prompt: string, imageUrl: string): Promise<
     return URL.createObjectURL(videoBlob);
   } catch (err) {
     console.error("Fallback video generation failed:", err);
+    return null;
+  }
+}
+
+// Helper to load image
+async function loadImage(src: string): Promise<HTMLImageElement | null> {
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject();
+      img.src = src;
+    });
+    return img;
+  } catch {
     return null;
   }
 }
@@ -236,16 +213,9 @@ export async function generateVisual(
         return { success: false, error: "Unable to generate base image for video." };
       }
 
-      // Try Runway API for real video generation
-      const runwayVideoUrl = await generateRunwayVideo(prompt, baseImageUrl);
-
-      let videoUrl = runwayVideoUrl;
-
-      // Fallback to local animation if Runway fails
-      if (!videoUrl) {
-        console.log("Falling back to local video generation...");
-        videoUrl = await generateFallbackVideo(prompt, baseImageUrl);
-      }
+      // Use multi-frame animation as primary video generation
+      console.log("Generating multi-frame video animation...");
+      let videoUrl = await generateFallbackVideo(prompt, baseImageUrl);
 
       if (!videoUrl) {
         URL.revokeObjectURL(baseImageUrl);
