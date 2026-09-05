@@ -46,6 +46,9 @@ type ModelStatus = "idle" | "loading" | "ready" | "error";
 
 // Fit the camera to the avatar model based on the desired framing mode.
 // Accounts for portrait orientation (tall/narrow viewport).
+// The model is normalized to a 1.7m standing humanoid, so the bounding box
+// drives a responsive distance that keeps the COMPLETE body (head to feet)
+// visible with symmetric padding, on any screen size.
 function fitCameraToAvatar(
   model: THREE.Group,
   camera: THREE.PerspectiveCamera,
@@ -60,57 +63,76 @@ function fitCameraToAvatar(
   const center = new THREE.Vector3();
   box.getCenter(center);
 
+  // Pick the FOV for this framing mode first, so the distance math uses it.
+  camera.fov = mode === "FULL_BODY" ? 45 : 33;
+  camera.updateProjectionMatrix();
+
   const fovRad = (camera.fov * Math.PI) / 180;
   // Horizontal FOV depends on aspect ratio (portrait = narrow horizontal FOV)
   const horizontalFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
+
+  // Fraction of the viewport the model should occupy (~80% => 10% padding
+  // above the head and below the feet, within the requested 8-12% range).
+  const fitFraction = 0.80;
 
   let distance: number;
   let targetY: number;
 
   if (mode === "FULL_BODY") {
-    // Must fit head-to-toe vertically AND horizontally with padding
+    // Must fit head-to-toe vertically AND horizontally, on a portrait viewport.
     const verticalExtent = dimensions.y; // head to feet
     const horizontalExtent = dimensions.x; // width across shoulders/hips
 
-    // Distance to fit vertical extent
-    const distanceForVertical = verticalExtent / (2 * Math.tan(fovRad / 2));
-    // Distance to fit horizontal extent (accounting for portrait aspect)
-    const distanceForHorizontal = horizontalExtent / (2 * Math.tan(horizontalFovRad / 2));
-    // Use the larger distance to satisfy BOTH constraints
+    // Distance so the vertical extent occupies fitFraction of the vertical FOV.
+    const distanceForVertical =
+      verticalExtent / (2 * Math.tan(fovRad / 2) * fitFraction);
+    // Distance so the horizontal extent occupies fitFraction of the horizontal
+    // FOV (narrower on portrait, so this usually wins and keeps arms/hands visible).
+    const distanceForHorizontal =
+      horizontalExtent / (2 * Math.tan(horizontalFovRad / 2) * fitFraction);
+    // Use the larger distance to satisfy BOTH constraints with symmetric padding.
     distance = Math.max(distanceForVertical, distanceForHorizontal);
-    // Add 12% padding
-    distance *= 1.12;
-    // Target y at the model's vertical center for full-body view
+    // Small safety buffer so the head/hair and feet never touch the viewport
+    // edges even if the idle animation shifts the pose slightly.
+    distance *= 1.05;
+    // Target the model's vertical center so head and feet get equal padding.
     targetY = center.y;
   } else {
     // PORTRAIT mode - chest up, face readable
     const modelHeight = dimensions.y;
-    // Portrait camera distance should be ~1.3x the model's visible height for the given fov
     const portraitFactor = 1.3;
     distance = (modelHeight * portraitFactor) / (2 * Math.tan(fovRad / 2));
     // Slightly above center (chin level)
     targetY = center.y + 0.1;
   }
 
-  // Apply the computed camera settings
+  // Place the camera directly in front of the model's center at the fitted
+  // distance. No vertical offset -> head/feet are framed symmetrically.
   controls.target.set(center.x, targetY, center.z);
-  camera.fov = mode === "FULL_BODY" ? 45 : 33;
-  // Position camera: same x as center, y offset based on distance and fov,
-  // z = distance away from the model
-  camera.position.set(
-    center.x,
-    center.y + distance * Math.tan((camera.fov * Math.PI) / 360),
-    center.z + distance
+  camera.position.set(center.x, targetY, center.z + distance);
+
+  // Debug: confirm the Box3-driven responsive framing values on each fit.
+  console.log(
+    `[Avatar3D] Camera fit: mode=${mode} distance=${distance.toFixed(2)}m ` +
+    `modelH=${dimensions.y.toFixed(2)}m modelW=${dimensions.x.toFixed(2)}m ` +
+    `aspect=${aspect.toFixed(2)}`
   );
-  controls.minDistance = mode === "FULL_BODY" ? 2.0 : 1.0;
-  controls.maxDistance = mode === "FULL_BODY" ? 8.0 : 1.7;
-  controls.enablePan = mode !== "FULL_BODY"; // disable pan in portrait mode
-  controls.maxPolarAngle = mode === "FULL_BODY"
-    ? Math.PI / 2
-    : 1.5;
-  controls.minPolarAngle = mode === "FULL_BODY"
-    ? 0.1
-    : 0.4;
+
+  // Constrain orbit/zoom relative to the fitted distance so rotation and
+  // zoom stay sensible for the full-body framing on any screen size.
+  if (mode === "FULL_BODY") {
+    controls.minDistance = distance * 0.55;
+    controls.maxDistance = distance * 4.0;
+    controls.enablePan = false;
+    controls.maxPolarAngle = Math.PI * 0.55; // allow orbiting around the body
+    controls.minPolarAngle = Math.PI * 0.12;
+  } else {
+    controls.minDistance = 1.0;
+    controls.maxDistance = 1.7;
+    controls.enablePan = false;
+    controls.maxPolarAngle = 1.5;
+    controls.minPolarAngle = 0.4;
+  }
   controls.update();
 }
 
@@ -177,7 +199,10 @@ export default function Avatar3D({
   const loadedProfileIdRef = useRef<string | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [cameraMode, setCameraMode] = useState<CameraMode>("PORTRAIT");
+  const [cameraMode, setCameraMode] = useState<CameraMode>("FULL_BODY");
+  // Ref mirror of cameraMode so the mount-once resize/refit handler always
+  // reads the current framing mode without re-running the effect.
+  const cameraModeRef = useRef<CameraMode>("FULL_BODY");
 
   // Apply morph targets by name across all meshes
   const applyMorphTarget = useCallback((name: string, value: number) => {
@@ -422,14 +447,32 @@ export default function Avatar3D({
 
     animIdRef.current = requestAnimationFrame(animate);
 
-    // ✅ Resize handler - update camera and renderer, NOT the model
+    // ✅ Resize handler - update camera/renderer AND refit framing when the
+    // aspect changes significantly (e.g. orientation change on a phone) so the
+    // full body stays framed responsively without disrupting in-place rotation.
+    let lastAspect = container.clientWidth / container.clientHeight;
     const onResize = () => {
       if (!containerRef.current) return;
       const w = containerRef.current.clientWidth;
       const h = containerRef.current.clientHeight;
       renderer.setSize(w, h);
-      camera.aspect = w / h;
+      const newAspect = w / h;
+      camera.aspect = newAspect;
       camera.updateProjectionMatrix();
+
+      if (
+        modelRef.current &&
+        Math.abs(newAspect - lastAspect) / lastAspect > 0.15
+      ) {
+        fitCameraToAvatar(
+          modelRef.current,
+          camera,
+          controls,
+          cameraModeRef.current,
+          newAspect
+        );
+      }
+      lastAspect = newAspect;
     };
     window.addEventListener("resize", onResize);
 
@@ -556,7 +599,7 @@ export default function Avatar3D({
         // ✅ Fit camera to avatar based on current cameraMode
         if (cameraRef.current && controlsRef.current && containerRef.current) {
           const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
-          fitCameraToAvatar(model, cameraRef.current, controlsRef.current, cameraMode, aspect);
+          fitCameraToAvatar(model, cameraRef.current, controlsRef.current, cameraModeRef.current, aspect);
         }
 
         setModelStatus("ready");
@@ -582,15 +625,14 @@ export default function Avatar3D({
 
   // ✅ Toggle between PORTRAIT and FULL_BODY camera framing modes
   const toggleCameraMode = () => {
-    setCameraMode((mode) => {
-      const next = mode === "PORTRAIT" ? "FULL_BODY" : "PORTRAIT";
-      // Re-fit camera without reloading model
-      if (modelRef.current && cameraRef.current && controlsRef.current && containerRef.current) {
-        const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
-        fitCameraToAvatar(modelRef.current, cameraRef.current, controlsRef.current, next, aspect);
-      }
-      return next;
-    });
+    const next = cameraMode === "PORTRAIT" ? "FULL_BODY" : "PORTRAIT";
+    cameraModeRef.current = next;
+    setCameraMode(next);
+    // Re-fit camera without reloading model
+    if (modelRef.current && cameraRef.current && controlsRef.current && containerRef.current) {
+      const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
+      fitCameraToAvatar(modelRef.current, cameraRef.current, controlsRef.current, next, aspect);
+    }
   };
 
   return (
