@@ -1,4 +1,8 @@
 import { ProceduralImageGenerator } from "../reucore/image/ProceduralImageGenerator";
+import {
+  enhanceVisualPrompt,
+  buildMotionPromptVariants,
+} from "./visualPrompting.js";
 
 export type ReuCoreOutputType = "image" | "video";
 
@@ -24,9 +28,21 @@ const imageGenerator = new ProceduralImageGenerator();
 // Pollinations.ai - free AI image generation, no API key needed
 const POLLINATIONS_URL = "https://image.pollinations.ai/prompt/";
 
-async function generateRealImage(prompt: string, width = 1024, height = 1024, seed?: number): Promise<string | null> {
+async function generateRealImage(
+  prompt: string,
+  width = 1024,
+  height = 1024,
+  seed?: number,
+  quality: "standard" | "high" = "standard"
+): Promise<string | null> {
   try {
-    const encodedPrompt = encodeURIComponent(prompt);
+    const refinedPrompt = enhanceVisualPrompt(prompt, "image");
+    const qualityPrompt =
+      quality === "high"
+        ? `${refinedPrompt}, crisp detail, clean composition, no artifacts, no blemishes, no distortion, clean edges, sharp focus, rich texture, balanced lighting, high fidelity, premium realism, elegant color grading, polished final render`
+        : `${refinedPrompt}, clean composition, balanced lighting, high fidelity, no artifacts, no blemishes`;
+
+    const encodedPrompt = encodeURIComponent(qualityPrompt);
     const seedParam = seed ? `&seed=${seed}` : `&seed=${Math.floor(Math.random() * 100000)}`;
     const url = `${POLLINATIONS_URL}${encodedPrompt}?width=${width}&height=${height}&nologo=true${seedParam}`;
 
@@ -44,21 +60,18 @@ async function generateRealImage(prompt: string, width = 1024, height = 1024, se
 }
 
 // Generate multiple frames for animation storyboard
-async function generateAnimationFrames(prompt: string, frameCount: number): Promise<HTMLImageElement[]> {
+async function generateAnimationFrames(
+  prompt: string,
+  frameCount: number,
+  quality: "standard" | "high" = "standard"
+): Promise<HTMLImageElement[]> {
   const frames: HTMLImageElement[] = [];
-  const motionPrompts = [
-    `${prompt}, action shot, dynamic movement, energetic`,
-    `${prompt}, mid-motion, action frozen in time, cinematic`,
-    `${prompt}, dramatic moment, peak action, intense`,
-    `${prompt}, wide shot, full scene, establishing view`,
-    `${prompt}, slow motion, detailed, high quality`,
-    `${prompt}, fast motion, blur effect, energetic`,
-  ];
+  const motionPrompts = buildMotionPromptVariants(prompt, frameCount);
 
   for (let i = 0; i < frameCount; i++) {
     const motionPrompt = motionPrompts[i % motionPrompts.length];
     const seed = 1000 + i * 137;
-    const url = await generateRealImage(motionPrompt, 1024, 1024, seed);
+    const url = await generateRealImage(motionPrompt, 1024, 1024, seed, quality);
     if (!url) continue;
 
     const img = new Image();
@@ -75,7 +88,11 @@ async function generateAnimationFrames(prompt: string, frameCount: number): Prom
 }
 
 // Fallback: multi-frame animation storyboard
-async function generateFallbackVideo(prompt: string, baseImageUrl: string): Promise<string | null> {
+async function generateFallbackVideo(
+  prompt: string,
+  baseImageUrl: string,
+  quality: "standard" | "high" = "standard"
+): Promise<string | null> {
   try {
     const width = 1024;
     const height = 1024;
@@ -90,7 +107,7 @@ async function generateFallbackVideo(prompt: string, baseImageUrl: string): Prom
     if (!ctx) return null;
 
     // Try to get multiple frames for animation
-    const frames = await generateAnimationFrames(prompt, 4);
+    const frames = await generateAnimationFrames(prompt, 6, quality);
 
     // If we got multiple frames, use them; otherwise use the single base image
     const hasMultipleFrames = frames.length > 1;
@@ -207,7 +224,8 @@ export async function generateVisual(
   if (request.outputType === "video") {
     try {
       // Generate base image first
-      const baseImageUrl = await generateRealImage(prompt, 1024, 1024);
+      const quality = request.quality || "standard";
+      const baseImageUrl = await generateRealImage(prompt, 1024, 1024, undefined, quality);
 
       if (!baseImageUrl) {
         return { success: false, error: "Unable to generate base image for video." };
@@ -215,7 +233,7 @@ export async function generateVisual(
 
       // Use multi-frame animation as primary video generation
       console.log("Generating multi-frame video animation...");
-      let videoUrl = await generateFallbackVideo(prompt, baseImageUrl);
+      let videoUrl = await generateFallbackVideo(prompt, baseImageUrl, quality);
 
       if (!videoUrl) {
         URL.revokeObjectURL(baseImageUrl);
@@ -237,7 +255,8 @@ export async function generateVisual(
 
   // ============ IMAGE PATH ============
   try {
-    const realImageUrl = await generateRealImage(prompt, 1024, 1024);
+    const quality = request.quality || "standard";
+    const realImageUrl = await generateRealImage(prompt, 1024, 1024, undefined, quality);
 
     if (realImageUrl) {
       return {
@@ -250,10 +269,12 @@ export async function generateVisual(
     }
 
     // Fallback to procedural SVG
-    const generated = imageGenerator.generate(prompt);
-    const quality = request.quality || "standard";
+    const generated = imageGenerator.generate(
+      enhanceVisualPrompt(prompt, "image"),
+      { animated: false }
+    );
 
-    if (quality === "high") {
+    if (request.quality === "high") {
       const scale = 2;
       const w = Math.max(1, Math.floor((generated.width || 800) * scale));
       const h = Math.max(1, Math.floor((generated.height || 600) * scale));

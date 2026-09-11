@@ -1,4 +1,7 @@
 export async function askOllama(content: string, history: any[]) {
+  const baseUrl = (Deno.env.get("OLLAMA_BASE_URL") || "http://localhost:11434").replace(/\/$/, "");
+  const model = Deno.env.get("OLLAMA_MODEL") || "qwen2.5:7b";
+
   const safeHistory = (history || [])
     .filter(
       (m) =>
@@ -20,7 +23,7 @@ export async function askOllama(content: string, history: any[]) {
 
   try {
     const res = await fetch(
-      "http://localhost:11434/v1/chat/completions",
+      `${baseUrl}/v1/chat/completions`,
       {
         method: "POST",
         signal: controller.signal,
@@ -29,7 +32,7 @@ export async function askOllama(content: string, history: any[]) {
           Authorization: "Bearer ollama",
         },
         body: JSON.stringify({
-          model: "llama3",
+          model,
           messages: [
             {
               role: "system",

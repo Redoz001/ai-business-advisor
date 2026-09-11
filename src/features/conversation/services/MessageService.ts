@@ -13,6 +13,8 @@ const API_URL =
   `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reuben-ai`;
 
 const STRUCTURED_PREFIX = "__REUNEXUS_MESSAGE__:";
+const FREE_MESH_CACHE_KEY = "reunexus-free-mesh-cache";
+const FREE_MESH_CACHE_LIMIT = 100;
 
 type DatabaseMessage = {
   role: MessageRole;
@@ -107,6 +109,45 @@ export class MessageService {
     userId?: string;
     signal?: AbortSignal;
   }): Promise<string> {
+    const cacheKey = this.freeMeshKey(input.chatId, input.message);
+    const cachedResponse = this.readFreeMeshCache(cacheKey);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    if (import.meta.env.VITE_LOCAL_AI === "true") {
+      const baseUrl = (import.meta.env.VITE_OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
+      const model = import.meta.env.VITE_OLLAMA_MODEL || "llama3";
+      try {
+        const response = await fetch(`${baseUrl}/api/chat`, {
+          method: "POST",
+          signal: input.signal,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            stream: false,
+            messages: [{ role: "user", content: input.message }],
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result?.error || "Local Ollama request failed.");
+        }
+
+        const content = String(result?.message?.content || "");
+        this.writeFreeMeshCache(cacheKey, content);
+        return content;
+      } catch (error) {
+        if (import.meta.env.VITE_LOCAL_AI_ONLY === "true") {
+          throw error;
+        }
+        console.warn("Ollama unavailable; using hosted AI fallback.");
+      }
+    }
+
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -147,9 +188,44 @@ export class MessageService {
 
     try {
       const result = JSON.parse(raw);
-      return String(result?.payload ?? "");
+      const content = String(result?.payload ?? "");
+      this.writeFreeMeshCache(cacheKey, content);
+      return content;
     } catch {
+      this.writeFreeMeshCache(cacheKey, raw);
       return raw;
+    }
+  }
+
+  private static freeMeshKey(chatId: string, message: string): string {
+    return `${chatId}:${message.trim().toLowerCase().replace(/\s+/g, " ")}`;
+  }
+
+  private static readFreeMeshCache(key: string): string | null {
+    if (import.meta.env.VITE_FREE_MESH !== "true" || typeof localStorage === "undefined") {
+      return null;
+    }
+
+    try {
+      const cache = JSON.parse(localStorage.getItem(FREE_MESH_CACHE_KEY) || "{}");
+      return typeof cache[key]?.content === "string" ? cache[key].content : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private static writeFreeMeshCache(key: string, content: string): void {
+    if (import.meta.env.VITE_FREE_MESH !== "true" || !content || typeof localStorage === "undefined") {
+      return;
+    }
+
+    try {
+      const cache = JSON.parse(localStorage.getItem(FREE_MESH_CACHE_KEY) || "{}");
+      cache[key] = { content, savedAt: Date.now() };
+      const entries = Object.entries(cache).slice(-FREE_MESH_CACHE_LIMIT);
+      localStorage.setItem(FREE_MESH_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+    } catch {
+      localStorage.removeItem(FREE_MESH_CACHE_KEY);
     }
   }
 

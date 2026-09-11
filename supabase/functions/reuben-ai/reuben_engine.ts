@@ -1,5 +1,6 @@
 import { askGroq } from "./providers/groq.ts";
 import { askOpenAI } from "./providers/openai.ts";
+import { askOllama } from "./providers/ollama.ts";
 import { searchTavily } from "./providers/tavily.ts";
 
 import { generateImage } from "./providers/runway.ts";
@@ -32,8 +33,6 @@ function needsWeb(message: string) {
   return (
     msg.includes("today") ||
     msg.includes("current") ||
-    msg.includes("latest") ||
-    msg.includes("news") ||
     msg.includes("who is") ||
     msg.includes("price")
   );
@@ -78,18 +77,15 @@ function needsElevenLabs(message: string) {
    🧠 SMART ROUTER
 ========================= */
 async function routeModel(message: string): Promise<"openai" | "groq"> {
+  if (Deno.env.get("OPENAI_ENABLED") !== "true") {
+    return "groq";
+  }
+
   try {
-    const decision = await askGroq(`
-You are an AI routing engine.
-Decide which model should handle this request.
-RULES:
-- openai → complex reasoning, coding, debugging, architecture, deep explanation, analysis, planning
-- groq → simple Q&A, short answers, casual chat, basic info
-Return ONLY valid JSON:
-{ "model": "openai" | "groq", "confidence": 0-1 }
-User message:
-${message}
-`);
+    const decision = await askGroq(
+      `You are an AI routing engine. Return {"model":"openai"} or {"model":"groq"}. User: ${message}`,
+      []
+    );
     const parsed = JSON.parse(decision);
     if (parsed?.model === "openai") return "openai";
     return "groq";
@@ -104,7 +100,6 @@ ${message}
 function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
   return history
-    .filter(m => m?.content && typeof m.content === "string")
     .slice(-10)
     .map(m => ({
       role: m.role,
@@ -163,6 +158,10 @@ CURRENT USER FACTS
 ${facts.join("\n")}
     `.trim(),
   };
+}
+
+function isLocalModelEnabled() {
+  return Deno.env.get("OLLAMA_ENABLED") === "true";
 }
 
 /* =========================
@@ -224,7 +223,28 @@ ${message}
     if (needsVisual(message)) {
       console.log("🎬 Visual generation triggered");
 
-      // --- 1. Check for video intent ---
+      // --- 1. Prefer direct premium image generation when OpenAI is available ---
+      try {
+        const { imageTool } = await import("./ai/image.ts");
+        const imageResult = await imageTool(message);
+
+        if (imageResult?.type === "image" && imageResult?.url) {
+          return {
+            type: "image",
+            content: message,
+            image: {
+              url: imageResult.url,
+              prompt: message,
+            },
+            webUsed: false,
+            mode: "openai-image",
+          };
+        }
+      } catch (openAiError) {
+        console.warn("⚠️ OpenAI image generation unavailable, falling back:", openAiError);
+      }
+
+      // --- 2. Check for video intent ---
       const isVideo = /video|clip|animate|animation|moving/i.test(message);
       if (isVideo) {
         console.log("🎬 Video request detected (placeholder)");
@@ -236,7 +256,7 @@ ${message}
         };
       }
 
-      // --- 2. Try local ReuCore first ---
+      // --- 3. Try local ReuCore first ---
       try {
         console.log("🔄 Attempting local ReuCore generation...");
         const localResult = await generateLocalImage({
@@ -270,14 +290,7 @@ ${message}
           console.log("🔄 Trying Runway as fallback...");
           const imageResult = await generateImage(message);
 
-          const finalUrl =
-            typeof imageResult === "string"
-              ? imageResult
-              : imageResult?.output_url ||
-                imageResult?.url ||
-                imageResult?.payload ||
-                (Array.isArray(imageResult?.output) ? imageResult.output[0] : null) ||
-                (Array.isArray(imageResult?.result) ? imageResult.result[0] : null);
+          const finalUrl = imageResult;
 
           if (!finalUrl || typeof finalUrl !== "string") {
             throw new Error("No valid image URL extracted from Runway");
@@ -334,10 +347,15 @@ ${message}
     /* =========================
        🧠 SMART MODEL ROUTING
     ========================= */
-    const model = await routeModel(message);
+    const model = isLocalModelEnabled()
+      ? "local"
+      : await routeModel(message);
     let result = "";
     try {
-      if (model === "openai") {
+      if (model === "local") {
+        console.log("Ollama local brain");
+        result = await askOllama(enrichedMessage, contextMessages);
+      } else if (model === "openai") {
         console.log("🧠 OpenAI Brain");
         result = await askOpenAI(enrichedMessage, contextMessages);
       } else {
