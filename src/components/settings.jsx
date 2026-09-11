@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase.js";
+import {
+  readLocalSettings,
+  writeLocalSettings,
+} from "../services/userSettings.js";
 
 /* =========================
    DEFAULTS (BASE SYSTEM)
@@ -15,6 +19,8 @@ const DEFAULT_SETTINGS = {
   notifications: true,
   email_notifications: true,
   sound_enabled: true,
+  background_assistant: false,
+  background_greeting: true,
 
   ai_personality: "balanced",
   chat_density: "comfortable",
@@ -56,7 +62,17 @@ export default function Settings({ user }) {
             label: "Multi-Factor Authentication",
             type: "action",
             actionLabel: "Enable",
-            onClick: () => alert("MFA coming soon"),
+            onClick: async () => {
+              const { data, error } = await supabase.auth.mfa.enroll({
+                factorType: "totp",
+                friendlyName: "ReuNexus authenticator",
+              });
+              if (error) {
+                alert(error.message);
+                return;
+              }
+              alert(`MFA setup started. Scan this QR code in your authenticator app: ${data.totp.qr_code}`);
+            },
           },
           {
             key: "role",
@@ -183,6 +199,16 @@ export default function Settings({ user }) {
             label: "Sound Effects",
             type: "toggle",
           },
+          {
+            key: "background_assistant",
+            label: "Background Assistant",
+            type: "toggle",
+          },
+          {
+            key: "background_greeting",
+            label: "Assistant Status Notifications",
+            type: "toggle",
+          },
         ],
       },
 
@@ -215,12 +241,13 @@ export default function Settings({ user }) {
                 .eq("user_id", user.id);
 
               setSettings(DEFAULT_SETTINGS);
+              writeLocalSettings(DEFAULT_SETTINGS);
             },
           },
         ],
       },
     ];
-  }, [settings.role]);
+  }, [settings.role, user?.id]);
 
   /* =========================
      LOAD SETTINGS (MERGED SYSTEM)
@@ -240,6 +267,7 @@ export default function Settings({ user }) {
       if (data) {
         setSettings({
           ...DEFAULT_SETTINGS,
+          ...readLocalSettings(),
           ...data,
           feature_flags: {
             ...DEFAULT_SETTINGS.feature_flags,
@@ -247,9 +275,14 @@ export default function Settings({ user }) {
           },
         });
       } else {
+        const initialSettings = {
+          ...DEFAULT_SETTINGS,
+          ...readLocalSettings(),
+        };
+        setSettings(initialSettings);
         await supabase.from("user_settings").upsert({
           user_id: user.id,
-          ...DEFAULT_SETTINGS,
+          ...initialSettings,
         });
       }
 
@@ -282,12 +315,14 @@ export default function Settings({ user }) {
   const update = async (key, value) => {
     const newSettings = setNestedValue(settings, key, value);
     setSettings(newSettings);
+    writeLocalSettings(newSettings);
 
-    await supabase.from("user_settings").upsert({
+    const { error } = await supabase.from("user_settings").upsert({
       user_id: user.id,
       ...newSettings,
       updated_at: new Date().toISOString(),
     });
+    if (error) console.error("Unable to save setting:", error);
   };
 
   /* =========================

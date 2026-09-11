@@ -10,6 +10,7 @@ import { supabase } from "./lib/supabase.js";
 
 import ReubenAI from "./components/ReubenAI.jsx";
 import Sidebar from "./components/Sidebar.jsx";
+import BackgroundAssistant from "./components/BackgroundAssistant.jsx";
 
 const Auth = lazy(() => import("./Auth.jsx"));
 const Callback = lazy(() => import("./Callback.jsx"));
@@ -154,6 +155,7 @@ export default function App() {
 
   return (
     <Suspense fallback={fallbackScreen}>
+      <BackgroundAssistant />
       <Routes>
         {/* OAuth Callback */}
         <Route
