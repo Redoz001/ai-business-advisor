@@ -9,20 +9,15 @@ import type {
   Gesture,
 } from "./types";
 
-// Verified production-ready humanoid assets.
-// MIT-licensed reference models hosted by the three.js project (mrdoob/three.js),
-// served via raw.githubusercontent with CORS: * so browser loading works in production.
-// - Xbot.glb   : realistic rigged male humanoid with skeletal + face morphs
+// Real humanoid GLB assets stored locally in the app bundle.
+// These are the actual 3D character files used by the avatar system.
+// - Xbot.glb    : realistic rigged male humanoid with skeletal + face morphs
 // - Michelle.glb: realistic rigged female humanoid with blendshapes + animations
 const MODEL_URLS: Record<string, string> = {
-  "male-human-1":
-    "https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/Xbot.glb",
-  "robotic-1":
-    "https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/Xbot.glb",
-  "futuristic-1":
-    "https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/Michelle.glb",
-  "female-human-1":
-    "https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/Michelle.glb",
+  "male-human-1": "/models/Xbot.glb",
+  "robotic-1": "/models/Xbot.glb",
+  "futuristic-1": "/models/Michelle.glb",
+  "female-human-1": "/models/Michelle.glb",
 };
 
 type Avatar3DProps = {
@@ -682,6 +677,18 @@ export default function Avatar3D({
           </div>
         </div>
       )}
+
+      <button
+        type="button"
+        aria-label={`Toggle camera framing: ${cameraMode === "FULL_BODY" ? "portrait" : "full body"}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleCameraMode();
+        }}
+        className="absolute bottom-3 right-3 z-20 rounded-full border border-white/15 bg-slate-900/70 px-3 py-1.5 text-[11px] font-medium tracking-wide text-zinc-200 shadow-lg backdrop-blur-sm transition hover:border-violet-400 hover:bg-slate-900"
+      >
+        {cameraMode === "FULL_BODY" ? "Portrait" : "Full body"}
+      </button>
     </div>
   );
 }
