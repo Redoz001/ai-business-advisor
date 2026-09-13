@@ -241,6 +241,8 @@ export default function Avatar3D({
   const clockRef = useRef<THREE.Clock>(new THREE.Clock());
   const animIdRef = useRef<number>(0);
   const bonesRef = useRef<Map<string, THREE.Bone>>(new Map());
+  const boneRestRotationRef = useRef<Map<string, THREE.Euler>>(new Map());
+  const facialDetailsRef = useRef<THREE.Group | null>(null);
   const morphRef = useRef<Map<string, number>>(new Map());
   const loadedProfileIdRef = useRef<string | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus>("idle");
@@ -249,6 +251,10 @@ export default function Avatar3D({
   // Ref mirror of cameraMode so the mount-once resize/refit handler always
   // reads the current framing mode without re-running the effect.
   const cameraModeRef = useRef<CameraMode>("FULL_BODY");
+  const speakingRef = useRef(isSpeaking);
+  const thinkingRef = useRef(isThinking);
+  speakingRef.current = isSpeaking;
+  thinkingRef.current = isThinking;
 
   // Apply morph targets by name across all meshes
   const applyMorphTarget = useCallback((name: string, value: number) => {
@@ -361,6 +367,7 @@ export default function Avatar3D({
     let headYaw = 0;
     let headPitch = 0;
     let breathPhase = 0;
+    let fidgetPhase = Math.random() * Math.PI * 2;
 
     const animate = () => {
       const delta = clockRef.current.getDelta();
@@ -371,17 +378,52 @@ export default function Avatar3D({
         mixerRef.current.update(delta);
       }
 
-      // ✅ BREATHING (spine/chest bone)
+      // ✅ BREATHING, POSTURE, AND CLOTHING FIDGETING
       breathPhase += delta * 1.1;
-      const breathValue = Math.sin(breathPhase) * 0.02;
+      fidgetPhase += delta * 0.45;
+      const breathValue = Math.sin(breathPhase) * 0.018;
       const spineBone =
+        bonesRef.current.get("mixamorig:spine") ||
         bonesRef.current.get("spine") ||
         bonesRef.current.get("spine_01") ||
+        bonesRef.current.get("mixamorig:spine1") ||
         bonesRef.current.get("spine1") ||
         bonesRef.current.get("chest") ||
+        bonesRef.current.get("mixamorig:hips") ||
         bonesRef.current.get("hips");
       if (spineBone) {
-        spineBone.position.y = breathValue * 0.5;
+        const rest = boneRestRotationRef.current.get(spineBone.name.toLowerCase());
+        if (rest) {
+          spineBone.rotation.x = rest.x + breathValue * 0.5;
+          spineBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.7) * 0.008;
+        }
+        spineBone.position.y = breathValue * 0.35;
+      }
+
+      const hipsBone = bonesRef.current.get("mixamorig:hips") || bonesRef.current.get("hips");
+      if (hipsBone) {
+        const rest = boneRestRotationRef.current.get(hipsBone.name.toLowerCase());
+        if (rest) {
+          hipsBone.rotation.y = rest.y + Math.sin(fidgetPhase) * 0.025;
+          hipsBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.8) * 0.012;
+        }
+      }
+
+      const leftArm = bonesRef.current.get("mixamorig:leftarm");
+      const rightArm = bonesRef.current.get("mixamorig:rightarm");
+      for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
+        if (!bone) continue;
+        const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
+        if (rest) {
+          bone.rotation.z = rest.z + side * (0.018 + Math.sin(fidgetPhase * 1.3 + side) * 0.012);
+          bone.rotation.x = rest.x + Math.sin(fidgetPhase * 0.9 + side) * 0.01;
+        }
+      }
+
+      if (facialDetailsRef.current) {
+        facialDetailsRef.current.rotation.y = Math.sin(fidgetPhase * 1.7) * 0.025;
+        facialDetailsRef.current.rotation.z = Math.sin(fidgetPhase * 0.9) * 0.012;
+        facialDetailsRef.current.position.y = Math.sin(fidgetPhase * 1.4) * 0.004;
       }
 
       // ✅ BLINKING (morph or eyelid bone)
@@ -453,7 +495,7 @@ export default function Avatar3D({
       const jawMorphName = morph?.has("jawopen") ? "jawopen" : "jaw_open";
       const mouthMorphName = morph?.has("mouthopen") ? "mouthopen" : "mouth_open";
 
-      if (isSpeaking) {
+      if (speakingRef.current) {
         const mouthTarget = 0.35 + Math.sin(time * 8.5) * 0.25;
         mouthOpen += (mouthTarget - mouthOpen) * Math.min(delta * 14, 0.2);
 
@@ -478,7 +520,7 @@ export default function Avatar3D({
       }
 
       // ✅ THINKING
-      if (isThinking) {
+      if (thinkingRef.current) {
         if (headBone) {
           headBone.rotation.z = Math.sin(time * 0.5) * 0.04;
           headBone.rotation.x = 0.05 + Math.sin(time * 0.3) * 0.03;
@@ -553,6 +595,8 @@ export default function Avatar3D({
       mixerRef.current = null;
       bonesRef.current.clear();
       morphRef.current.clear();
+      boneRestRotationRef.current.clear();
+      facialDetailsRef.current = null;
       loadedProfileIdRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -610,6 +654,10 @@ export default function Avatar3D({
           }
         });
         bonesRef.current = boneMap;
+        boneRestRotationRef.current = new Map(
+          Array.from(boneMap.entries()).map(([name, bone]) => [name, bone.rotation.clone()])
+        );
+        facialDetailsRef.current = model.getObjectByName("avatar-facial-details") as THREE.Group | null;
 
         // ✅ Map morph targets
         const morphMap = new Map<string, number>();
