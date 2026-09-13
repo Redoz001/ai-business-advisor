@@ -14,7 +14,7 @@ import type {
 // - Xbot.glb    : realistic rigged male humanoid with skeletal + face morphs
 // - Michelle.glb: realistic rigged female humanoid with blendshapes + animations
 const MODEL_URLS: Record<string, string> = {
-  "male-human-1": "/models/Xbot.glb",
+  "male-human-1": "/models/Michelle.glb",
   "robotic-1": "/models/Xbot.glb",
   "futuristic-1": "/models/Michelle.glb",
   "female-human-1": "/models/Michelle.glb",
@@ -166,6 +166,57 @@ function normalizeHumanoidModel(model: THREE.Group) {
     center: finalCenter,
     height: dimensions.y * scale,
   };
+}
+
+function addFacialDetails(model: THREE.Group, profile: AvatarProfile) {
+  const head = model.getObjectByName("mixamorig:Head") ??
+    model.getObjectByName("Head") ??
+    model.getObjectByName("head");
+  if (!head) return;
+
+  const headPosition = new THREE.Vector3();
+  head.getWorldPosition(headPosition);
+  const details = new THREE.Group();
+  details.name = "avatar-facial-details";
+
+  const eyeWhite = new THREE.MeshStandardMaterial({
+    color: 0xf4f1eb,
+    roughness: 0.35,
+  });
+  const iris = new THREE.MeshStandardMaterial({
+    color: profile.eyeColor,
+    roughness: 0.25,
+  });
+  const hair = new THREE.MeshStandardMaterial({
+    color: profile.hairColor,
+    roughness: 0.75,
+  });
+
+  const eyeGeometry = new THREE.SphereGeometry(0.028, 20, 14);
+  const irisGeometry = new THREE.SphereGeometry(0.013, 16, 10);
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(eyeGeometry, eyeWhite);
+    eye.position.set(headPosition.x + side * 0.045, headPosition.y + 0.012, headPosition.z + 0.105);
+    details.add(eye);
+
+    const pupil = new THREE.Mesh(irisGeometry, iris);
+    pupil.position.set(headPosition.x + side * 0.045, headPosition.y + 0.012, headPosition.z + 0.13);
+    details.add(pupil);
+  }
+
+  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hair);
+  hairCap.scale.set(0.17, 0.16, 0.15);
+  hairCap.position.set(headPosition.x, headPosition.y + 0.07, headPosition.z - 0.015);
+  details.add(hairCap);
+
+  if (profile.hairStyle === "long") {
+    const hairBack = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hair);
+    hairBack.scale.set(0.19, 0.25, 0.13);
+    hairBack.position.set(headPosition.x, headPosition.y - 0.05, headPosition.z - 0.07);
+    details.add(hairBack);
+  }
+
+  model.add(details);
 }
 
 export default function Avatar3D({
@@ -540,6 +591,7 @@ export default function Avatar3D({
 
         // ✅ Normalize the humanoid model (scale to 1.7m, center feet on ground)
         const norm = normalizeHumanoidModel(model);
+        addFacialDetails(model, profile);
 
         // ✅ IMPORTANT: Preserve authored materials - DO NOT overwrite PBR maps
         // The previous code traversed all meshes and replaced roughness/metalness/envMapIntensity,
