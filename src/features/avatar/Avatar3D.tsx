@@ -245,6 +245,7 @@ export default function Avatar3D({
   const facialDetailsRef = useRef<THREE.Group | null>(null);
   const morphRef = useRef<Map<string, number>>(new Map());
   const loadedProfileIdRef = useRef<string | null>(null);
+  const hasActiveAnimationRef = useRef(false);
   const [modelStatus, setModelStatus] = useState<ModelStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("FULL_BODY");
@@ -368,6 +369,7 @@ export default function Avatar3D({
     let headPitch = 0;
     let breathPhase = 0;
     let fidgetPhase = Math.random() * Math.PI * 2;
+    let nextBlinkAt = 2.5 + Math.random() * 1.5;
 
     const animate = () => {
       const delta = clockRef.current.getDelta();
@@ -382,6 +384,15 @@ export default function Avatar3D({
       breathPhase += delta * 1.1;
       fidgetPhase += delta * 0.45;
       const breathValue = Math.sin(breathPhase) * 0.018;
+
+      // Keep the whole character subtly in motion even when the GLB has no
+      // compatible idle clip or expected humanoid bone names.
+      const model = modelRef.current;
+      if (model && !hasActiveAnimationRef.current) {
+        model.position.y = Math.sin(breathPhase) * 0.006;
+        model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.025;
+        model.rotation.z = Math.sin(fidgetPhase * 0.7) * 0.008;
+      }
       const spineBone =
         bonesRef.current.get("mixamorig:spine") ||
         bonesRef.current.get("spine") ||
@@ -427,10 +438,9 @@ export default function Avatar3D({
       }
 
       // ✅ BLINKING (morph or eyelid bone)
-      const blinkPeriod = 2.5 + Math.random() * 1.5;
-      const blink = time % blinkPeriod < 0.1;
-      if (blink) {
-        blinkPhase = Math.min(blinkPhase + delta * 15, 1);
+      if (time >= nextBlinkAt) {
+        blinkPhase = 1;
+        nextBlinkAt = time + 2.5 + Math.random() * 1.5;
       } else {
         blinkPhase = Math.max(blinkPhase - delta * 8, 0);
       }
@@ -622,6 +632,7 @@ export default function Avatar3D({
     if (mixerRef.current) {
       mixerRef.current = null;
     }
+    hasActiveAnimationRef.current = false;
     bonesRef.current.clear();
     morphRef.current.clear();
 
@@ -684,11 +695,13 @@ export default function Avatar3D({
               a.name.toLowerCase().includes("idle") ||
               a.name.toLowerCase().includes("loop") ||
               a.name.toLowerCase().includes("stand")
-          );
-          if (idleAnim) {
-            const action = mixer.clipAction(idleAnim);
-            action.play();
-          }
+          ) || gltf.animations[0];
+          const action = mixer.clipAction(idleAnim);
+          action.setLoop(THREE.LoopRepeat, Infinity);
+          action.play();
+          hasActiveAnimationRef.current = true;
+        } else {
+          hasActiveAnimationRef.current = false;
         }
 
         // ✅ Fit camera to avatar based on current cameraMode
