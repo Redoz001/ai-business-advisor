@@ -25,6 +25,7 @@ type Avatar3DProps = {
   isMicActive: boolean;
   isSpeaking?: boolean;
   isThinking?: boolean;
+  gesture?: Gesture;
   onAvatarClick?: () => void;
   onAvatarLoad?: () => void;
   onAvatarError?: (error: Error) => void;
@@ -224,6 +225,7 @@ export default function Avatar3D({
   isMicActive,
   isSpeaking = false,
   isThinking = false,
+  gesture = "none",
   onAvatarClick,
   onAvatarLoad,
   onAvatarError,
@@ -254,8 +256,10 @@ export default function Avatar3D({
   const cameraModeRef = useRef<CameraMode>("FULL_BODY");
   const speakingRef = useRef(isSpeaking);
   const thinkingRef = useRef(isThinking);
+  const gestureRef = useRef(gesture);
   speakingRef.current = isSpeaking;
   thinkingRef.current = isThinking;
+  gestureRef.current = gesture;
 
   // Apply morph targets by name across all meshes
   const applyMorphTarget = useCallback((name: string, value: number) => {
@@ -388,6 +392,7 @@ export default function Avatar3D({
       // Keep the whole character subtly in motion even when the GLB has no
       // compatible idle clip or expected humanoid bone names.
       const model = modelRef.current;
+      const isDancing = gestureRef.current === "dance";
       if (model && !hasActiveAnimationRef.current) {
         model.position.y = Math.sin(breathPhase) * 0.006;
         model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.025;
@@ -435,6 +440,30 @@ export default function Avatar3D({
         facialDetailsRef.current.rotation.y = Math.sin(fidgetPhase * 1.7) * 0.025;
         facialDetailsRef.current.rotation.z = Math.sin(fidgetPhase * 0.9) * 0.012;
         facialDetailsRef.current.position.y = Math.sin(fidgetPhase * 1.4) * 0.004;
+      }
+
+      // Explicit dance performance: coordinated weight shifts and upper-body
+      // counter-motion keep it expressive without affecting normal speech.
+      if (isDancing && model) {
+        const danceTime = time * 3.2;
+        model.position.y = Math.abs(Math.sin(danceTime)) * 0.025;
+        model.rotation.y = Math.sin(danceTime * 0.5) * 0.16;
+        model.rotation.z = Math.sin(danceTime) * 0.035;
+        if (hipsBone) {
+          const rest = boneRestRotationRef.current.get(hipsBone.name.toLowerCase());
+          if (rest) {
+            hipsBone.rotation.y = rest.y + Math.sin(danceTime) * 0.22;
+            hipsBone.rotation.z = rest.z + Math.sin(danceTime * 0.5) * 0.08;
+          }
+        }
+        for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
+          if (!bone) continue;
+          const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
+          if (rest) {
+            bone.rotation.z = rest.z + side * (0.22 + Math.sin(danceTime + side) * 0.18);
+            bone.rotation.x = rest.x + Math.sin(danceTime * 0.7 + side) * 0.12;
+          }
+        }
       }
 
       // ✅ BLINKING (morph or eyelid bone)
@@ -489,8 +518,9 @@ export default function Avatar3D({
       }
 
       // ✅ HEAD MOVEMENT
-      headYaw += (Math.sin(time * 0.4) * 0.04 - headYaw) * delta * 6;
-      headPitch += (Math.sin(time * 0.2) * 0.02 - headPitch) * delta * 4;
+      const speakingMotion = speakingRef.current ? Math.sin(time * 2.3) * 0.025 : 0;
+      headYaw += (Math.sin(time * 0.4) * 0.04 + speakingMotion - headYaw) * delta * 6;
+      headPitch += (Math.sin(time * 0.2) * 0.02 + speakingMotion * 0.35 - headPitch) * delta * 4;
       const headBone =
         bonesRef.current.get("head") ??
         bonesRef.current.get("head_01") ??
@@ -498,6 +528,30 @@ export default function Avatar3D({
       if (headBone) {
         headBone.rotation.y = headYaw;
         headBone.rotation.x = headPitch;
+      }
+
+      // Natural conversational emphasis: small alternating hand gestures while
+      // speaking, with enough restraint to preserve eye contact and posture.
+      if (speakingRef.current && !isDancing) {
+        for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
+          if (!bone) continue;
+          const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
+          if (rest) {
+            bone.rotation.z = rest.z + side * Math.max(0, Math.sin(time * 2.1 + side)) * 0.045;
+            bone.rotation.x = rest.x + Math.sin(time * 1.7 + side) * 0.025;
+          }
+        }
+      }
+
+      // Hair reacts to movement independently, producing soft secondary motion.
+      if (model) {
+        model.traverse((child) => {
+          const name = child.name.toLowerCase();
+          if (!name.includes("hair") && !name.includes("ponytail") && !name.includes("bang")) return;
+          const hair = child as THREE.Object3D;
+          hair.rotation.z = Math.sin(time * (isDancing ? 4.2 : 1.2)) * (isDancing ? 0.07 : 0.018);
+          hair.rotation.y = Math.cos(time * (isDancing ? 3.1 : 0.8)) * (isDancing ? 0.05 : 0.012);
+        });
       }
 
       // ✅ SPEECH / LIP SYNC (morph targets)

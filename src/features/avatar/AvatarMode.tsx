@@ -147,6 +147,10 @@ export default function AvatarMode({
         text += event.results[i][0].transcript;
       }
       setTranscript(text);
+      if (/\b(dance|dancing|do a dance)\b/i.test(text)) {
+        setGesture("dance");
+        window.setTimeout(() => setGesture("none"), 7000);
+      }
     };
 
     recognition.onerror = (event: any) => {
@@ -354,6 +358,7 @@ export default function AvatarMode({
             isMicActive={isMicActive}
             isSpeaking={isSpeaking}
             isThinking={isThinking}
+            gesture={gesture}
             onStateChange={handleStateChange}
             onEmotionChange={handleEmotionChange}
             onGestureChange={handleGestureChange}

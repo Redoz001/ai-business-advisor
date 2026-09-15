@@ -38,6 +38,7 @@ export type Emotion =
 
 export type Gesture =
   | "none"
+  | "dance"
   | "small_nod"
   | "strong_nod"
   | "head_shake"
