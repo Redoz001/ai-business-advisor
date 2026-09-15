@@ -94,6 +94,8 @@ export default function AvatarMode({
   const audioDataRef = useRef<Uint8Array | null>(null);
   const isSpeakingRef = useRef(false);
   const greetedProfileIdRef = useRef<string | null>(null);
+  const danceTimeoutRef = useRef<number | null>(null);
+  const danceCommandHandledRef = useRef(false);
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -135,6 +137,7 @@ export default function AvatarMode({
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
+    danceCommandHandledRef.current = false;
 
     recognition.onstart = () => {
       setIsMicActive(true);
@@ -148,9 +151,21 @@ export default function AvatarMode({
         text += event.results[i][0].transcript;
       }
       setTranscript(text);
-      if (/\b(dance|dancing|do a dance)\b/i.test(text)) {
+      const latestResult = event.results[event.results.length - 1];
+      if (
+        latestResult?.isFinal &&
+        !danceCommandHandledRef.current &&
+        /\b(dance|dancing|do a dance)\b/i.test(text)
+      ) {
+        danceCommandHandledRef.current = true;
         setGesture("dance");
-        window.setTimeout(() => setGesture("none"), 7000);
+        if (danceTimeoutRef.current !== null) {
+          window.clearTimeout(danceTimeoutRef.current);
+        }
+        danceTimeoutRef.current = window.setTimeout(() => {
+          setGesture("none");
+          danceTimeoutRef.current = null;
+        }, 7000);
       }
     };
 
@@ -180,6 +195,8 @@ export default function AvatarMode({
     recognitionRef.current?.stop();
     setIsMicActive(false);
     setState("IDLE");
+    setGesture("none");
+    danceCommandHandledRef.current = false;
   }, []);
 
   // Send transcript to AI
@@ -281,6 +298,9 @@ export default function AvatarMode({
       recognitionRef.current?.stop();
       speechSynthRef.current?.cancel();
       audioContextRef.current?.close();
+      if (danceTimeoutRef.current !== null) {
+        window.clearTimeout(danceTimeoutRef.current);
+      }
     };
   }, []);
 
