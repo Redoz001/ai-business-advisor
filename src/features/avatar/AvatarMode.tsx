@@ -93,6 +93,7 @@ export default function AvatarMode({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioDataRef = useRef<Uint8Array | null>(null);
   const isSpeakingRef = useRef(false);
+  const greetedProfileIdRef = useRef<string | null>(null);
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -245,7 +246,13 @@ export default function AvatarMode({
 
   // Greeting when avatar loads
   useEffect(() => {
-    if (state === "IDLE" && !isSpeaking && !isMicActive) {
+    if (
+      state === "IDLE" &&
+      !isSpeaking &&
+      !isMicActive &&
+      greetedProfileIdRef.current !== profile.id
+    ) {
+      greetedProfileIdRef.current = profile.id;
       const timer = setTimeout(() => {
         speakText(
           `Hello! I'm ${profile.name}. How can I help you today?`
@@ -279,6 +286,7 @@ export default function AvatarMode({
 
   const handleSelectAvatar = (newProfile: AvatarProfile) => {
     setProfile(newProfile);
+    greetedProfileIdRef.current = null;
     setShowCatalog(false);
     speechSynthRef.current?.cancel();
     setIsSpeaking(false);
