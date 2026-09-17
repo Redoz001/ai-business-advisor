@@ -747,13 +747,17 @@ export default function Avatar3D({
           const idleAnim = gltf.animations.find(
             (a) =>
               a.name.toLowerCase().includes("idle") ||
-              a.name.toLowerCase().includes("loop") ||
-              a.name.toLowerCase().includes("stand")
-          ) || gltf.animations[0];
-          const action = mixer.clipAction(idleAnim);
-          action.setLoop(THREE.LoopRepeat, Infinity);
-          action.play();
-          hasActiveAnimationRef.current = true;
+              a.name.toLowerCase().includes("breath")
+          );
+          if (idleAnim) {
+            const action = mixer.clipAction(idleAnim);
+            action.setLoop(THREE.LoopRepeat, Infinity);
+            action.play();
+            hasActiveAnimationRef.current = true;
+          } else {
+            mixerRef.current = null;
+            hasActiveAnimationRef.current = false;
+          }
         } else {
           hasActiveAnimationRef.current = false;
         }
