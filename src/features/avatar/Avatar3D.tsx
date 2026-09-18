@@ -387,16 +387,18 @@ export default function Avatar3D({
       // ✅ BREATHING, POSTURE, AND CLOTHING FIDGETING
       breathPhase += delta * 1.1;
       fidgetPhase += delta * 0.45;
-      const breathValue = Math.sin(breathPhase) * 0.018;
+      const breathValue = Math.sin(breathPhase) * 0.035;
 
       // Keep the whole character subtly in motion even when the GLB has no
       // compatible idle clip or expected humanoid bone names.
       const model = modelRef.current;
       const isDancing = gestureRef.current === "dance";
       if (model && !hasActiveAnimationRef.current) {
-        model.position.y = Math.sin(breathPhase) * 0.006;
-        model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.025;
-        model.rotation.z = Math.sin(fidgetPhase * 0.7) * 0.008;
+        const weightShift = Math.sin(fidgetPhase * 0.7) * 0.018;
+        model.position.y = Math.sin(breathPhase) * 0.012;
+        model.position.x = weightShift;
+        model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.06;
+        model.rotation.z = Math.sin(fidgetPhase * 0.7) * 0.018;
       }
       const spineBone =
         bonesRef.current.get("mixamorig:spine") ||
@@ -410,36 +412,43 @@ export default function Avatar3D({
       if (spineBone) {
         const rest = boneRestRotationRef.current.get(spineBone.name.toLowerCase());
         if (rest) {
-          spineBone.rotation.x = rest.x + breathValue * 0.5;
-          spineBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.7) * 0.008;
+          spineBone.rotation.x = rest.x + breathValue * 0.7;
+          spineBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.7) * 0.025;
         }
-        spineBone.position.y = breathValue * 0.35;
+        spineBone.position.y = breathValue * 0.5;
       }
 
       const hipsBone = bonesRef.current.get("mixamorig:hips") || bonesRef.current.get("hips");
       if (hipsBone) {
         const rest = boneRestRotationRef.current.get(hipsBone.name.toLowerCase());
         if (rest) {
-          hipsBone.rotation.y = rest.y + Math.sin(fidgetPhase) * 0.025;
-          hipsBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.8) * 0.012;
+          hipsBone.rotation.y = rest.y + Math.sin(fidgetPhase) * 0.06;
+          hipsBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.8) * 0.035;
         }
       }
 
       const leftArm = bonesRef.current.get("mixamorig:leftarm");
       const rightArm = bonesRef.current.get("mixamorig:rightarm");
+      const leftShoulder = bonesRef.current.get("mixamorig:leftshoulder");
+      const rightShoulder = bonesRef.current.get("mixamorig:rightshoulder");
       for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
         if (!bone) continue;
         const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
         if (rest) {
-          bone.rotation.z = rest.z + side * (0.018 + Math.sin(fidgetPhase * 1.3 + side) * 0.012);
-          bone.rotation.x = rest.x + Math.sin(fidgetPhase * 0.9 + side) * 0.01;
+          bone.rotation.z = rest.z + side * (0.045 + Math.sin(fidgetPhase * 1.3 + side) * 0.03);
+          bone.rotation.x = rest.x + Math.sin(fidgetPhase * 0.9 + side) * 0.025;
         }
+      }
+      for (const [bone, side] of [[leftShoulder, 1], [rightShoulder, -1]] as const) {
+        if (!bone) continue;
+        const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
+        if (rest) bone.rotation.z = rest.z + side * Math.sin(fidgetPhase * 1.1 + side) * 0.035;
       }
 
       if (facialDetailsRef.current) {
-        facialDetailsRef.current.rotation.y = Math.sin(fidgetPhase * 1.7) * 0.025;
-        facialDetailsRef.current.rotation.z = Math.sin(fidgetPhase * 0.9) * 0.012;
-        facialDetailsRef.current.position.y = Math.sin(fidgetPhase * 1.4) * 0.004;
+        facialDetailsRef.current.rotation.y = Math.sin(fidgetPhase * 1.7) * 0.05;
+        facialDetailsRef.current.rotation.z = Math.sin(fidgetPhase * 0.9) * 0.025;
+        facialDetailsRef.current.position.y = Math.sin(fidgetPhase * 1.4) * 0.008;
       }
 
       // Explicit dance performance: coordinated weight shifts and upper-body
