@@ -1,7 +1,7 @@
 ﻿// src/features/conversation/services/RequestPipeline.ts
 
-import { createClient } from "@supabase/supabase-js";
 import { generateVisual } from "../../../services/reucore";
+import { supabase } from "../../../lib/supabase";
 import type {
   ConversationMessage,
   MessageType,
@@ -31,21 +31,27 @@ type TextResponseRequester = (input: {
   signal?: AbortSignal;
 }) => Promise<string>;
 
+type StreamTextResponseRequester = (
+  input: {
+    message: string;
+    chatId: string;
+    userId?: string;
+    signal?: AbortSignal;
+  },
+  onDelta?: (delta: string, full: string) => void
+) => Promise<string>;
+
 export class RequestPipeline {
   private supabase: any;
 
   constructor(supabaseClient?: any) {
-    this.supabase =
-      supabaseClient ||
-      createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY
-      );
+    this.supabase = supabaseClient || supabase;
   }
 
   async execute(
     request: PipelineRequest,
-    requestTextResponse: TextResponseRequester
+    requestTextResponse: TextResponseRequester,
+    requestStreamResponse?: StreamTextResponseRequester
   ): Promise<PipelineResponse> {
     const { prompt, chatId, userId, signal, messages } = request;
 
@@ -160,6 +166,41 @@ export class RequestPipeline {
 
     // ---- TEXT REQUEST → USE LLM ----
     try {
+      // Prefer real token streaming when the caller provided it.
+      if (requestStreamResponse) {
+        let streamed = "";
+
+        const content = await requestStreamResponse(
+          {
+            message: prompt,
+            chatId,
+            userId,
+            signal,
+          },
+          (delta, full) => {
+            streamed = full;
+          }
+        );
+
+        if (content) {
+          return {
+            type: "text",
+            content,
+            metadata: { mode: "llm" },
+            shouldStream: false,
+          };
+        }
+
+        if (streamed) {
+          return {
+            type: "text",
+            content: streamed,
+            metadata: { mode: "llm" },
+            shouldStream: false,
+          };
+        }
+      }
+
       const content = await requestTextResponse({
         message: prompt,
         chatId,

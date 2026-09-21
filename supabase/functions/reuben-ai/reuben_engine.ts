@@ -1,4 +1,4 @@
-import { askGroq } from "./providers/groq.ts";
+import { askGroq, askGroqStream } from "./providers/groq.ts";
 import { askOpenAI } from "./providers/openai.ts";
 import { askOllama } from "./providers/ollama.ts";
 import { searchTavily } from "./providers/tavily.ts";
@@ -162,6 +162,58 @@ ${facts.join("\n")}
 
 function isLocalModelEnabled() {
   return Deno.env.get("OLLAMA_ENABLED") === "true";
+}
+
+/* =========================
+   ⚡ STREAMING ENGINE
+========================= */
+// Same history/context/enrichment pipeline as routeRequest, but returns
+// an async generator of speech-ready text chunks. Falls back to the
+// non-streaming engine so output is never lost.
+export async function* streamRequest(message: string, context: any) {
+  const history = sanitizeHistory(context?.sessionHistory || []);
+
+  const conversationState = buildConversationState(history, message);
+  const factState = buildFactState(history, message);
+  const contextMessages = [conversationState, factState, ...history];
+
+  // Enrichment (web search) is intentionally skipped for streaming so
+  // the first tokens can arrive immediately. Search mode remains
+  // available through the classic engine.
+  try {
+    const model = isLocalModelEnabled()
+      ? "local"
+      : await routeModel(message);
+
+    if (model === "local") {
+      console.log("⚡ Ollama local brain (streamed)");
+      const answer = await askOllama(message, contextMessages);
+      yield answer;
+      return;
+    }
+
+    if (model === "openai") {
+      console.log("⚡ OpenAI Brain (streamed via non-stream as safe fallback)");
+      const answer = await askOpenAI(message, contextMessages);
+      yield answer;
+      return;
+    }
+
+    console.log("⚡ Groq Brain (streamed)");
+    try {
+      for await (const delta of askGroqStream(message, contextMessages)) {
+        yield delta;
+      }
+      return;
+    } catch (streamError: any) {
+      console.warn("Groq stream failed, falling back to non-stream:", streamError.message);
+      const answer = await askGroq(message, contextMessages);
+      yield answer;
+    }
+  } catch (err: any) {
+    console.error("streamRequest fatal error:", err);
+    yield "System error in ReuNexus AI.";
+  }
 }
 
 /* =========================

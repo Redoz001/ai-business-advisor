@@ -197,6 +197,161 @@ export class MessageService {
     }
   }
 
+  /**
+   * Stream an assistant reply token-by-token using SSE.
+   * Calls onDelta as each chunk arrives and returns the full text.
+   *
+   * Safe by design:
+   * - If the backend does not support streaming (old deployment, non-2xx,
+   *   or a non-SSE body), it transparently falls back to the classic
+   *   JSON response from requestTextResponse so chat never breaks.
+   * - Pass-through signal abort / cancellation is respected.
+   */
+  static async streamTextResponse(
+    input: {
+      message: string;
+      chatId: string;
+      userId?: string;
+      signal?: AbortSignal;
+    },
+    onDelta?: (delta: string, full: string) => void
+  ): Promise<string> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const controller = new AbortController();
+
+    const abortListener = () => controller.abort();
+    input.signal?.addEventListener("abort", abortListener);
+
+    let full = "";
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token
+            ? {
+                Authorization: `Bearer ${session.access_token}`,
+              }
+            : {}),
+        },
+        body: JSON.stringify({
+          message: input.message,
+          chatId: input.chatId,
+          userId: input.userId || "anon",
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Stream request failed with status ${response.status}.`);
+      }
+
+      const contentType = response.headers.get("Content-Type") || "";
+
+      // Backend did not honor streaming → fall back to classic JSON.
+      if (!contentType.includes("text/event-stream")) {
+        const raw = await response.text();
+
+        let content = "";
+        try {
+          const json = JSON.parse(raw);
+          content = String(json?.payload ?? "");
+        } catch {
+          content = raw;
+        }
+
+        if (!content) {
+          throw new Error("Empty response from AI.");
+        }
+
+        full = content;
+        onDelta?.(full, full);
+        return full;
+      }
+
+      if (!response.body) {
+        throw new Error("Streaming not supported by this network layer.");
+      }
+
+      const reader = response.body.getReader();
+
+      const decoder = new TextDecoder();
+
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary: number;
+
+        while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+          const event = buffer.slice(0, boundary);
+
+          buffer = buffer.slice(boundary + 2);
+
+          for (const line of event.split("\n")) {
+            if (!line.startsWith("data:")) continue;
+
+            const payload = line.slice(5).trim();
+
+            if (!payload) continue;
+
+            try {
+              const data = JSON.parse(payload);
+
+              if (data?.done === true) {
+                return full;
+              }
+
+              if (data?.error) {
+                throw new Error(data.error);
+              }
+
+              const delta = String(data?.delta ?? "");
+
+              if (delta) {
+                full += delta;
+                onDelta?.(delta, full);
+              }
+            } catch {
+              // Ignore keep-alive / malformed frames.
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
+
+      // Streaming path failed for any reason — degrade gracefully to the
+      // battle-tested JSON endpoint so the user still gets an answer.
+      console.warn("Streaming unavailable, falling back:", error instanceof Error ? error.message : error);
+
+      const fallback = await this.requestTextResponse({
+        message: input.message,
+        chatId: input.chatId,
+        userId: input.userId,
+      });
+
+      full = fallback;
+      onDelta?.(fallback, fallback);
+    } finally {
+      input.signal?.removeEventListener("abort", abortListener);
+    }
+
+    return full;
+  }
+
   private static freeMeshKey(chatId: string, message: string): string {
     return `${chatId}:${message.trim().toLowerCase().replace(/\s+/g, " ")}`;
   }

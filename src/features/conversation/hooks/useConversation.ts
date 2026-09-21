@@ -214,7 +214,15 @@ export function useConversation({
             messages: currentContext,
             signal: controller.signal,
           },
-          MessageService.requestTextResponse
+          (input) =>
+            MessageService.requestTextResponse(
+              input
+            ),
+          (input, onDelta) =>
+            MessageService.streamTextResponse(
+              input,
+              onDelta
+            )
         );
 
       // For image/video, keep loading state until the visual is actually rendered

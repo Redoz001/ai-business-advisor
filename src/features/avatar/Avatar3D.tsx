@@ -14,8 +14,10 @@ import type {
 // - Xbot.glb    : realistic rigged male humanoid with skeletal + face morphs
 // - Michelle.glb: realistic rigged female humanoid with blendshapes + animations
 const MODEL_URLS: Record<string, string> = {
-  "male-human-1": "/models/Michelle.glb",
+  // Male / robotic avatars use the male rig.
+  "male-human-1": "/models/Xbot.glb",
   "robotic-1": "/models/Xbot.glb",
+  // Female / futuristic avatars use the female rig.
   "futuristic-1": "/models/Michelle.glb",
   "female-human-1": "/models/Michelle.glb",
 };
@@ -288,7 +290,7 @@ export default function Avatar3D({
     // Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x0d0d20);
+    scene.background = new THREE.Color(0x15182d);
 
     // Camera - start with portrait mode
     const aspect = container.clientWidth / container.clientHeight;
@@ -308,13 +310,13 @@ export default function Avatar3D({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.3;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // ===== PORTRAIT STUDIO LIGHTING =====
     // Key light - warm, soft, from camera-right
-    const keyLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+    const keyLight = new THREE.DirectionalLight(0xffeedd, 2.0);
     keyLight.position.set(1.5, 2.0, 2.0);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 512;
@@ -322,22 +324,26 @@ export default function Avatar3D({
     scene.add(keyLight);
 
     // Fill light - cooler, softer, from camera-left
-    const fillLight = new THREE.DirectionalLight(0xddddff, 0.6);
+    const fillLight = new THREE.DirectionalLight(0xddddff, 1.0);
     fillLight.position.set(-1.5, 0.5, 1.5);
     scene.add(fillLight);
 
     // Rim light - from behind
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const rimLight = new THREE.DirectionalLight(0xffffff, 1.2);
     rimLight.position.set(0, 1.5, -2.0);
     scene.add(rimLight);
 
     // Ambient fill
-    const ambient = new THREE.AmbientLight(0x404060, 0.4);
+    const ambient = new THREE.AmbientLight(0x68739c, 0.85);
     scene.add(ambient);
 
     // Hemisphere for sky/ground color
-    const hemi = new THREE.HemisphereLight(0x8899cc, 0x445566, 0.3);
+    const hemi = new THREE.HemisphereLight(0xb8c8ff, 0x667080, 0.65);
     scene.add(hemi);
+
+    const faceLight = new THREE.PointLight(0xfff4e8, 0.7, 4.5);
+    faceLight.position.set(0, 1.65, 1.8);
+    scene.add(faceLight);
 
     // Ground shadow disc
     const ground = new THREE.Mesh(
@@ -387,21 +393,22 @@ export default function Avatar3D({
       // ✅ BREATHING, POSTURE, AND CLOTHING FIDGETING
       breathPhase += delta * 1.1;
       fidgetPhase += delta * 0.45;
-      const breathValue = Math.sin(breathPhase) * 0.035;
+      const breathValue = Math.sin(breathPhase) * 0.06;
 
       // Keep the whole character subtly in motion even when the GLB has no
       // compatible idle clip or expected humanoid bone names.
       const model = modelRef.current;
       const isDancing = gestureRef.current === "dance";
-      if (model && !hasActiveAnimationRef.current) {
-        const weightShift = Math.sin(fidgetPhase * 0.7) * 0.018;
-        model.position.y = Math.sin(breathPhase) * 0.012;
+      if (model) {
+        const weightShift = Math.sin(fidgetPhase * 0.7) * 0.025;
+        model.position.y = Math.sin(breathPhase) * 0.018;
         model.position.x = weightShift;
-        model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.06;
-        model.rotation.z = Math.sin(fidgetPhase * 0.7) * 0.018;
+        model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.09;
+        model.rotation.z = Math.sin(fidgetPhase * 0.7) * 0.028;
       }
       const spineBone =
         bonesRef.current.get("mixamorig:spine") ||
+        bonesRef.current.get("mixamorigspine") ||
         bonesRef.current.get("spine") ||
         bonesRef.current.get("spine_01") ||
         bonesRef.current.get("mixamorig:spine1") ||
@@ -418,7 +425,10 @@ export default function Avatar3D({
         spineBone.position.y = breathValue * 0.5;
       }
 
-      const hipsBone = bonesRef.current.get("mixamorig:hips") || bonesRef.current.get("hips");
+      const hipsBone =
+        bonesRef.current.get("mixamorig:hips") ||
+        bonesRef.current.get("mixamorighips") ||
+        bonesRef.current.get("hips");
       if (hipsBone) {
         const rest = boneRestRotationRef.current.get(hipsBone.name.toLowerCase());
         if (rest) {
@@ -427,10 +437,18 @@ export default function Avatar3D({
         }
       }
 
-      const leftArm = bonesRef.current.get("mixamorig:leftarm");
-      const rightArm = bonesRef.current.get("mixamorig:rightarm");
-      const leftShoulder = bonesRef.current.get("mixamorig:leftshoulder");
-      const rightShoulder = bonesRef.current.get("mixamorig:rightshoulder");
+      const leftArm =
+        bonesRef.current.get("mixamorig:leftarm") ||
+        bonesRef.current.get("mixamorigleftarm");
+      const rightArm =
+        bonesRef.current.get("mixamorig:rightarm") ||
+        bonesRef.current.get("mixamorigrightarm");
+      const leftShoulder =
+        bonesRef.current.get("mixamorig:leftshoulder") ||
+        bonesRef.current.get("mixamorigleftshoulder");
+      const rightShoulder =
+        bonesRef.current.get("mixamorig:rightshoulder") ||
+        bonesRef.current.get("mixamorigrightshoulder");
       for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
         if (!bone) continue;
         const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
@@ -532,6 +550,8 @@ export default function Avatar3D({
       headPitch += (Math.sin(time * 0.2) * 0.02 + speakingMotion * 0.35 - headPitch) * delta * 4;
       const headBone =
         bonesRef.current.get("head") ??
+        bonesRef.current.get("mixamorig:head") ??
+        bonesRef.current.get("mixamorighead") ??
         bonesRef.current.get("head_01") ??
         bonesRef.current.get("neck");
       if (headBone) {
