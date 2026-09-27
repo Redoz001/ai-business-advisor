@@ -412,6 +412,7 @@ export class MessageService {
       message.type === "text" &&
       !message.image &&
       !message.video &&
+      !message.movie &&
       !message.metadata
     ) {
       return message.content;
@@ -424,6 +425,7 @@ export class MessageService {
         content: message.content,
         image: message.image,
         video: message.video,
+        movie: message.movie,
         metadata: message.metadata,
       })
     );
@@ -455,6 +457,7 @@ export class MessageService {
           type: parsed?.type ?? "text",
           image: parsed?.image,
           video: parsed?.video,
+          movie: parsed?.movie,
           metadata: parsed?.metadata,
         }
       );

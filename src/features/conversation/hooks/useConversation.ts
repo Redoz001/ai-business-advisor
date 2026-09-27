@@ -259,6 +259,7 @@ export function useConversation({
           type: result.type,
           image: result.image,
           video: result.video,
+          movie: result.movie,
           metadata: result.metadata,
           status: result.shouldStream
             ? "streaming"
@@ -288,6 +289,7 @@ export function useConversation({
         content: result.content,
         image: result.image,
         video: result.video,
+        movie: result.movie,
         metadata: result.metadata,
         status: "complete",
       };
