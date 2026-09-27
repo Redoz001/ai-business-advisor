@@ -3,6 +3,7 @@ import {
   enhanceVisualPrompt,
   buildMotionPromptVariants,
 } from "./visualPrompting.js";
+import { brandBlob } from "../reucore/branding/reunexusBrand";
 
 export type ReuCoreOutputType = "image" | "video";
 
@@ -44,13 +45,17 @@ async function generateRealImage(
 
     const encodedPrompt = encodeURIComponent(qualityPrompt);
     const seedParam = seed ? `&seed=${seed}` : `&seed=${Math.floor(Math.random() * 100000)}`;
-    const url = `${POLLINATIONS_URL}${encodedPrompt}?width=${width}&height=${height}&nologo=true${seedParam}`;
+    // `nologo` is dead in the Pollinations API; branding is applied locally.
+    const url = `${POLLINATIONS_URL}${encodedPrompt}?width=${width}&height=${height}${seedParam}`;
 
     const response = await fetch(url);
     if (!response.ok) return null;
 
-    const blob = await response.blob();
-    if (blob.size < 1000) return null;
+    const rawBlob = await response.blob();
+    if (rawBlob.size < 1000) return null;
+
+    // Erase the Pollinations lockup and stamp ReuNexus branding.
+    const blob = await brandBlob(rawBlob);
 
     return URL.createObjectURL(blob);
   } catch (err) {

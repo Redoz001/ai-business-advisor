@@ -1,11 +1,16 @@
 ﻿// src/features/conversation/types/Message.ts
 
+import type {
+  MovieManifest,
+} from "../../reucore/movie/types";
+
 export type MessageRole = "user" | "assistant" | "system";
 
 export type MessageType =
   | "text"
   | "image"
   | "video"
+  | "movie"
   | "code"
   | "document"
   | "system";
@@ -42,6 +47,11 @@ export type ConversationMessage = {
     prompt?: string;
     durationSeconds?: number;
     mimeType?: string;
+  };
+
+  movie?: {
+    manifest: MovieManifest;
+    status?: string;
   };
 
   metadata?: Record<string, unknown>;

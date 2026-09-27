@@ -1,6 +1,7 @@
 ﻿// src/features/conversation/components/MessageRenderer.tsx
 import CodeMessage from "./CodeMessage";
 import ImageMessage from "./ImageMessage";
+import MovieMessage from "./MovieMessage";
 import SystemMessage from "./SystemMessage";
 import TextMessage from "./TextMessage";
 import VideoMessage from "./VideoMessage";
@@ -100,6 +101,32 @@ export default function MessageRenderer({ message, onDownloadImage, onDownloadVi
     }
 
     return <VideoMessage content={message.content} video={videoData} onDownload={onDownloadVideo} />;
+  }
+
+  // --- MOVIE ---
+  if (message.type === "movie") {
+    let movieData = message.movie;
+    if (!movieData?.manifest && message.payload) {
+      const payload = message.payload;
+      if (typeof payload === "object" && payload?.manifest) {
+        movieData = { manifest: payload.manifest, status: payload.status };
+      }
+    }
+
+    if (!movieData?.manifest) {
+      console.warn("No movie manifest found for movie message.");
+      return (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-100">
+          <p className="font-medium">Film pitch received</p>
+          <p className="mt-2 text-sm text-amber-100/80">
+            The studio recognized your request for a feature film, but the
+            screenplay manifest is missing. Check the edge function output.
+          </p>
+        </div>
+      );
+    }
+
+    return <MovieMessage content={message.content} movie={movieData} />;
   }
 
   // --- CODE ---

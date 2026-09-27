@@ -6,7 +6,11 @@
   "remote": {
     "https://deno.land/std@0.224.0/async/delay.ts": "f90dd685b97c2f142b8069082993e437b1602b8e2561134827eeb7c12b95c499",
     "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514",
-    "https://esm.sh/@supabase/supabase-js@2.116.0": "a38014743786a06c7dbf095a99e9ef3b38c0ec16bff076fc7cd403991192b34e"
+    "https://esm.sh/@supabase/supabase-js@2.116.0": "a38014743786a06c7dbf095a99e9ef3b38c0ec16bff076fc7cd403991192b34e",
+    "https://esm.sh/gifenc@1.0.3": "32f9005f85571e422f62e7f0a0011689a3a08132aedb1d614158fc0f3e57e955",
+    "https://esm.sh/gifenc@1.0.3/denonext/gifenc.mjs": "7430f1d56fd083fa881c4cc27bfbb11c955c636425022084e03516b62f4b7933",
+    "https://esm.sh/jpeg-js@0.4.4": "42a7c0c44335295014457724ddd096d3bf93696ab24f52391aae8be50e4cb732",
+    "https://esm.sh/jpeg-js@0.4.4/denonext/jpeg-js.mjs": "a17c0569461f12e5270b82d8ca4ecad2bec0e77e6575e737a8c09cf270a6e959"
   },
   "workspace": {
     "packageJson": {

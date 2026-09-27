@@ -1,7 +1,10 @@
 export const MODELS = {
-  chat: "llama-3.3-70b-versatile",
-  fallback: "llama-3.1-8b-instant",
-  reasoning: "llama-3.3-70b-versatile",
+  // Live Groq lineup (verified Sept 2026). The previous
+  // `llama-3.3-70b-versatile` / `llama-3.1-8b-instant` names return
+  // 404 model_not_found on the project's key.
+  chat: "openai/gpt-oss-120b",
+  fallback: "qwen/qwen3.8-27b",
+  reasoning: "openai/gpt-oss-120b",
   embedding: "text-embedding-3-small",
 };
 

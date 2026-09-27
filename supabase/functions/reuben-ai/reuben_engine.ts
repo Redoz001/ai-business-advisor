@@ -39,6 +39,21 @@ function needsWeb(message: string) {
 }
 
 /* =========================
+   🎬 MOVIE DETECTOR
+========================= */
+function needsMovie(message: string) {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("movie") ||
+    msg.includes("film") ||
+    msg.includes("story") ||
+    msg.includes("feature-length") ||
+    (msg.includes("make") && msg.includes("episode")) ||
+    (msg.includes("create") && msg.includes("episode"))
+  );
+}
+
+/* =========================
    🎬 VISUAL DETECTOR (IMAGE/VIDEO)
 ========================= */
 function needsVisual(message: string) {
@@ -272,8 +287,69 @@ ${message}
     /* =========================
        🎬 VISUAL GENERATION (IMAGE/VIDEO)
     ========================= */
+    if (needsMovie(message)) {
+      console.log("🎬 Movie intent detected — writing screenplay");
+
+      try {
+        const { writeScreenplay } = await import("./ai/screenwriter.ts");
+        const manifest = await writeScreenplay(message, {
+          scenes: 6,
+          shotsPerScene: 5,
+        });
+
+        console.log("✅ Screenplay written:", manifest.title, "-", manifest.runtimeSeconds, "seconds");
+        return {
+          type: "movie",
+          content: `🎬 "${manifest.title}" — ${manifest.tagline}`,
+          movie: {
+            manifest,
+            status: "ready",
+          },
+          webUsed: false,
+          mode: "screenwriter",
+        };
+      } catch (screenwriteErr: any) {
+        console.error("❌ Screenplay failed:", screenwriteErr.message);
+        // Fall back to normal visual generation so the user still gets something.
+        console.log("🎬 Screenwriter failed — degrading to visual fallback.");
+      }
+    }
+
     if (needsVisual(message)) {
       console.log("🎬 Visual generation triggered");
+
+      // --- 0. Video/animation intent → free Pollinations animated GIF ---
+      const isVideo = /video|clip|animate|animation|moving/i.test(message);
+      if (isVideo) {
+        console.log("🎬 Video request detected — generating animated GIF (Pollinations)");
+        try {
+          const { generateGif } = await import("./providers/runway.ts");
+          const gifUrl = await generateGif(message);
+
+          console.log("✅ Animated GIF generated:", gifUrl.slice(0, 40), "len:", gifUrl.length);
+          // ⭐ Content is a `data:image/gif;base64,...` URL that the frontend
+          //   renders in an <img> tag, which auto-plays the animation.
+          return {
+            type: "image",
+            content: message,
+            image: {
+              url: gifUrl,
+              prompt: message,
+              mimeType: "image/gif",
+            },
+            webUsed: false,
+            mode: "pollinations-gif",
+          };
+        } catch (gifErr: any) {
+          console.error("❌ GIF generation failed:", gifErr.message);
+          return {
+            type: "text",
+            payload: "Video generation failed. Please try again later.",
+            webUsed: false,
+            mode: "video-error",
+          };
+        }
+      }
 
       // --- 1. Prefer direct premium image generation when OpenAI is available ---
       try {
@@ -296,19 +372,7 @@ ${message}
         console.warn("⚠️ OpenAI image generation unavailable, falling back:", openAiError);
       }
 
-      // --- 2. Check for video intent ---
-      const isVideo = /video|clip|animate|animation|moving/i.test(message);
-      if (isVideo) {
-        console.log("🎬 Video request detected (placeholder)");
-        return {
-          type: "text",
-          payload: "Video generation is coming soon. We're working on it! 🎬",
-          webUsed: false,
-          mode: "video-placeholder",
-        };
-      }
-
-      // --- 3. Try local ReuCore first ---
+      // --- 2. Try local ReuCore first ---
       try {
         console.log("🔄 Attempting local ReuCore generation...");
         const localResult = await generateLocalImage({

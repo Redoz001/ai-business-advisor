@@ -1,5 +1,7 @@
 ﻿// src/features/conversation/components/ImageMessage.tsx
-import React from "react";
+import React, { useEffect, useState } from "react";
+
+import { cleanedDisplayUrl } from "../../../reucore/branding/reunexusBrand";
 
 interface ImageMessageProps {
   content?: string;
@@ -15,6 +17,30 @@ interface ImageMessageProps {
 }
 
 export default function ImageMessage({ content, image, onDownload }: ImageMessageProps) {
+  // Display-time safety net: erase the Pollinations lockup from the pixels
+  // and stamp ReuNexus branding. Skips SVG vectors and animated GIFs; the
+  // helper memoizes per URL so re-renders never recompute.
+  const sourceUrl = image?.url;
+  const [displayUrl, setDisplayUrl] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDisplayUrl(undefined);
+    if (!sourceUrl) return;
+    cleanedDisplayUrl(sourceUrl)
+      .then((cleaned) => {
+        if (!cancelled) setDisplayUrl(cleaned);
+      })
+      .catch(() => {
+        if (!cancelled) setDisplayUrl(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceUrl]);
+
+  const finalUrl = displayUrl ?? sourceUrl;
+
   if (!image) {
     return <div className="text-gray-400">No image data</div>;
   }
@@ -79,7 +105,8 @@ export default function ImageMessage({ content, image, onDownload }: ImageMessag
   }
 
   // --- URL HANDLING (Runway, Pollinations, or external) ---
-  if (image.url) {
+  // `finalUrl` is the ReuNexus-branded version when branding applies.
+  if (finalUrl) {
     return (
       <div className="reunexus-image-container" style={{ maxWidth: "100%" }}>
         <div
@@ -94,8 +121,8 @@ export default function ImageMessage({ content, image, onDownload }: ImageMessag
           }}
         >
           <img
-            src={image.url}
-            alt={content || image.prompt || "Generated image"}
+            src={finalUrl}
+            alt={content || image?.prompt || "Generated image"}
             style={{
               maxWidth: "100%",
               maxHeight: "500px",
@@ -114,9 +141,9 @@ export default function ImageMessage({ content, image, onDownload }: ImageMessag
         {image.width && image.height && (
           <div className="text-xs text-gray-500 mt-1">{image.width} × {image.height}</div>
         )}
-        {onDownload && image.url && (
+        {onDownload && finalUrl && (
           <button
-            onClick={() => onDownload(image.url!, "reunexus-image.png")}
+            onClick={() => onDownload(finalUrl, "reunexus-image.png")}
             className="mt-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-white transition hover:bg-zinc-700"
           >
             Download Image

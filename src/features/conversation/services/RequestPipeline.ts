@@ -20,6 +20,7 @@ export type PipelineResponse = {
   content: string;
   image?: ConversationMessage["image"];
   video?: ConversationMessage["video"];
+  movie?: ConversationMessage["movie"];
   metadata?: Record<string, unknown>;
   shouldStream: boolean;
 };
@@ -54,6 +55,18 @@ export class RequestPipeline {
     requestStreamResponse?: StreamTextResponseRequester
   ): Promise<PipelineResponse> {
     const { prompt, chatId, userId, signal, messages } = request;
+
+    // ---- DETECT MOVIE INTENT (takes priority over single visuals) ----
+    const isMovie = this.isMovieRequest(prompt);
+    if (isMovie) {
+      return this.handleMovieRequest({
+        prompt,
+        chatId,
+        userId,
+        signal,
+        messages,
+      });
+    }
 
     // ---- DETECT VISUAL INTENT ----
     const isVisual = this.isVisualRequest(prompt);
@@ -123,6 +136,16 @@ export class RequestPipeline {
             content: response.content || prompt,
             image: response.image,
             metadata: response.metadata || { mode: response.mode || "reucore" },
+            shouldStream: false,
+          };
+        }
+
+        if (response?.type === "movie" && response?.movie?.manifest) {
+          return {
+            type: "movie",
+            content: response.content || response.movie.manifest.title,
+            movie: response.movie,
+            metadata: response.metadata || { mode: "movie" },
             shouldStream: false,
           };
         }
@@ -226,6 +249,69 @@ export class RequestPipeline {
   }
 
   // ---- DETECTION ----
+  private isMovieRequest(prompt: string): boolean {
+    const msg = prompt.toLowerCase().trim();
+    return (
+      msg.includes("movie") ||
+      msg.includes("feature film") ||
+      msg.includes("motion picture") ||
+      msg.includes("screenplay") ||
+      msg.includes("feature-length") ||
+      msg.includes("an hour") ||
+      msg.includes("1 hour") ||
+      msg.includes("60 minute") ||
+      msg.includes("cinematic story")
+    );
+  }
+
+  // ---- MOVIE REQUEST → EDGE FUNCTION (screenwriter) ----
+  private async handleMovieRequest(input: {
+    prompt: string;
+    chatId: string;
+    userId?: string;
+    signal?: AbortSignal;
+    messages: ConversationMessage[];
+  }): Promise<PipelineResponse> {
+    try {
+      const response = await this.callEdgeFunction({
+        message: input.prompt,
+        chatId: input.chatId,
+        userId: input.userId,
+        signal: input.signal,
+        history: input.messages,
+      });
+
+      if (response?.type === "movie" && response?.movie?.manifest) {
+        return {
+          type: "movie",
+          content: response.content || `🎬 ${response.movie.manifest.title}`,
+          movie: response.movie,
+          metadata: response.metadata || { mode: "movie" },
+          shouldStream: false,
+        };
+      }
+
+      const fallbackText =
+        typeof response?.content === "string" && response.content.length > 0
+          ? response.content
+          : "The film studio choked on the pitch — try rewording it. I can write a feature-length screenplay from a one-line concept, then film it in your browser.";
+      return {
+        type: "text",
+        content: fallbackText,
+        metadata: { mode: "fallback" },
+        shouldStream: false,
+      };
+    } catch (error) {
+      console.error("Movie request error:", error);
+      return {
+        type: "text",
+        content: `Movie studio error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        metadata: { mode: "error" },
+        shouldStream: false,
+      };
+    }
+  }
+
   private isVisualRequest(prompt: string): boolean {
     const msg = prompt.toLowerCase().trim();
     return (
