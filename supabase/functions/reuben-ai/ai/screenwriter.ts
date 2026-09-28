@@ -274,6 +274,11 @@ export function buildKeyframePrompt(
    PUBLIC API
 ========================= */
 
+/** How many times the LLM gets to produce a valid screenplay before we
+ *  synthesize a minimal one. Malformed JSON / empty scene lists are common
+ *  LLM failure modes and a single attempt made films randomly degrade. */
+const SCREENPLAY_ATTEMPTS = 3;
+
 /**
  * Writes a full screenplay (MovieManifest) for a concept using Groq.
  * Pure text step — no images are generated here, so it returns quickly.
@@ -287,23 +292,45 @@ export async function writeScreenplay(
 
   const systemPrompt = buildScreenwriterSystemPrompt();
   const userPrompt = buildScreenplayUserPrompt(concept, opts);
+  const chapter = opts.continuation ? (opts.continuation.chapter ?? 2) : 1;
 
-  const rawText = await askGroq(
-    `${systemPrompt}\n\n${userPrompt}`,
-    []
-  );
+  let manifest: MovieManifest | null = null;
+  let lastError = "";
 
-  let raw: Record<string, unknown>;
-  try {
-    raw = extractJson(rawText);
-  } catch (jsonError) {
-    console.error(
-      "Screenplay JSON parse failed:",
-      jsonError instanceof Error ? jsonError.message : String(jsonError)
-    );
+  for (let attempt = 1; attempt <= SCREENPLAY_ATTEMPTS; attempt++) {
+    // Later attempts nudge the model after a bad reply; temperature keeps
+    // each retry a genuinely fresh sample.
+    const nudge =
+      attempt === 1
+        ? ""
+        : `\n\nYour previous reply was rejected (${lastError}). Respond with ONLY one valid JSON object matching the schema exactly — no markdown fences, no commentary.`;
+
+    try {
+      const rawText = await askGroq(
+        `${systemPrompt}\n\n${userPrompt}${nudge}`,
+        []
+      );
+      const raw = extractJson(rawText);
+      // Validate through the full normalizer so empty scene lists and bad
+      // shot shapes also count as failed attempts.
+      manifest = normalizeManifest(raw, opts, fallbackConcept, chapter);
+      break;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      console.error(
+        `Screenplay attempt ${attempt}/${SCREENPLAY_ATTEMPTS} failed:`,
+        lastError
+      );
+    }
+  }
+
+  if (!manifest) {
     // Last resort: synthesize a minimal-but-valid manifest so features still
-    // work even if the LLM drifts out of schema.
-    raw = {
+    // work even if the LLM persistently drifts out of schema.
+    console.error(
+      "Screenplay unparseable after retries — using synthesized manifest."
+    );
+    const raw: Record<string, unknown> = {
       title: fallbackConcept.slice(0, 60),
       tagline: "An original cinematic epic.",
       genre: "cinematic",
@@ -348,10 +375,10 @@ export async function writeScreenplay(
         },
       ],
     };
+    manifest = normalizeManifest(raw, opts, fallbackConcept, chapter);
   }
 
-  const chapter = opts.continuation ? (opts.continuation.chapter ?? 2) : 1;
-  return normalizeManifest(raw, opts, fallbackConcept, chapter);
+  return manifest;
 }
 
 /** Total number of keyframes needed for a manifest. */

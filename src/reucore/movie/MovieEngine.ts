@@ -128,6 +128,8 @@ export class MovieEngine {
   private renderer: MovieRenderer;
   private mediaSource: MediaSource | null = null;
   private sourceBuffer: SourceBuffer | null = null;
+  /** Every scene segment produced so far — replayed when a stream restarts. */
+  private appendedBlobs: Blob[] = [];
 
   constructor(renderer?: MovieRenderer) {
     this.renderer = renderer ?? new MovieRenderer();
@@ -152,10 +154,17 @@ export class MovieEngine {
       detail: `Writing art direction for "${manifest.title}"…`,
     });
 
-    // Set up MediaSource for progressive playback. On later chapters the
-    // MediaSource already exists, so we keep appending into the same player.
-    if (!this.mediaSource) {
+    // Set up MediaSource for progressive playback. After endOfStream() the
+    // previous stream is terminal ("ended"), so a continuation chapter starts
+    // a fresh stream and replays every segment produced so far — the player
+    // still shows the whole film while runtime stays unbounded.
+    const needsFreshStream =
+      !this.mediaSource || this.mediaSource.readyState !== "open";
+    const replayBlobs: Blob[] = needsFreshStream ? this.appendedBlobs : [];
+
+    if (needsFreshStream) {
       this.mediaSource = new MediaSource();
+      this.sourceBuffer = null;
       video.src = URL.createObjectURL(this.mediaSource);
       await new Promise<void>((resolve) => {
         this.mediaSource!.addEventListener("sourceopen", () => resolve(), {
@@ -164,31 +173,68 @@ export class MovieEngine {
       });
     }
 
-    if (!this.sourceBuffer) {
-      try {
-        this.sourceBuffer = this.mediaSource.addSourceBuffer('video/webm;codecs="vp9,opus"');
-        this.sourceBuffer.mode = "segments";
-      } catch {
+    // The SourceBuffer codec string must match what MediaRecorder actually
+    // recorded (vp9 / vp8 / plain webm), so the buffer is created lazily from
+    // the first blob's type instead of assuming "vp9,opus" — a mismatch makes
+    // appendBuffer fail and leaves the player with nothing to display.
+    const ensureSourceBuffer = (type?: string): void => {
+      if (this.sourceBuffer || !this.mediaSource) return;
+      const candidates = [
+        type,
+        'video/webm;codecs="vp9,opus"',
+        "video/webm;codecs=vp9",
+        "video/webm",
+      ];
+      for (const mime of candidates) {
+        if (!mime) continue;
         try {
-          this.sourceBuffer = this.mediaSource.addSourceBuffer("video/webm");
+          const sb = this.mediaSource.addSourceBuffer(mime);
+          sb.mode = "segments";
+          this.sourceBuffer = sb;
+          return;
         } catch {
-          this.sourceBuffer = null;
+          // try the next codec string
         }
       }
-    }
+      this.sourceBuffer = null;
+    };
 
     const appendBlob = async (blob: Blob): Promise<void> => {
-      if (!this.sourceBuffer) throw new Error("No MediaSource buffer available.");
+      ensureSourceBuffer(blob.type);
+      const sb = this.sourceBuffer;
+      if (!sb) throw new Error("No MediaSource buffer available.");
       const buf = await blob.arrayBuffer();
-      this.sourceBuffer.appendBuffer(buf);
-      await new Promise<void>((resolve) => {
-        const handler = () => {
-          this.sourceBuffer?.removeEventListener("updateend", handler);
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          sb.removeEventListener("updateend", onOk);
+          sb.removeEventListener("error", onErr);
+        };
+        const onOk = () => {
+          cleanup();
           resolve();
         };
-        this.sourceBuffer.addEventListener("updateend", handler);
+        // A SourceBuffer failure fires "error" (never "updateend"); without
+        // this listener the append promise hangs forever.
+        const onErr = () => {
+          cleanup();
+          reject(new Error("SourceBuffer failed to append the scene."));
+        };
+        sb.addEventListener("updateend", onOk);
+        sb.addEventListener("error", onErr);
+        try {
+          sb.appendBuffer(buf);
+        } catch (err) {
+          cleanup();
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
       });
     };
+
+    // Replay earlier chapters when the stream was restarted (see above).
+    for (const oldBlob of replayBlobs) {
+      if (signal?.aborted) break;
+      await appendBlob(oldBlob);
+    }
 
     let renderedSeconds = 0;
     let keyframeCount = 0;
@@ -217,7 +263,12 @@ export class MovieEngine {
         let dataUrl = await getCachedKeyframe(cacheKey);
         if (!dataUrl) {
           dataUrl = await fetchKeyframe(prompt, seed, signal);
-          await cacheKeyframe(cacheKey, dataUrl);
+          try {
+            await cacheKeyframe(cacheKey, dataUrl);
+          } catch (cacheErr) {
+            // A quota/private-mode cache failure must not kill production.
+            console.warn("Keyframe cache skipped:", cacheErr);
+          }
         }
 
         // Erase the Pollinations lockup and stamp ReuNexus branding before the
@@ -268,6 +319,21 @@ export class MovieEngine {
       });
 
       renderedSeconds += scene.shots.reduce((sum, s) => sum + s.seconds, 0);
+    }
+
+    // Close the stream so the player gets a real duration and a clean end of
+    // playback instead of an open-ended MediaSource that stalls at the end.
+    // Aborted productions stay open so "Continue story" can keep appending.
+    if (
+      !signal?.aborted &&
+      this.mediaSource &&
+      this.mediaSource.readyState === "open"
+    ) {
+      try {
+        this.mediaSource.endOfStream();
+      } catch {
+        // A mid-append race is harmless here.
+      }
     }
 
     emit(onProgress, {
@@ -332,6 +398,7 @@ export class MovieEngine {
     // Stream the segment into the player. If MediaSource appending fails,
     // fall back to playing this single segment directly.
     ctx.onSegment?.(blob, ctx.sIdx);
+    this.appendedBlobs.push(blob);
     try {
       await ctx.appendBlob(blob);
     } catch (appendError) {

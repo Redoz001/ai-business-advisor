@@ -154,6 +154,16 @@ export default function MovieMessage({ content, movie }: MovieMessageProps) {
           ref={videoRef}
           controls
           playsInline
+          onError={() => {
+            // Surface playback failures inline instead of leaving the
+            // browser's silent black/broken player.
+            const code = videoRef.current?.error?.code;
+            setError(
+              code
+                ? `The player could not display the film (media error ${code}). Reload the page to render it again.`
+                : "The player could not display the film. Reload the page to render it again."
+            );
+          }}
           style={{ maxWidth: "100%", maxHeight: "480px" }}
           className="w-full aspect-video bg-black"
         >

@@ -8,6 +8,17 @@ import type {
   EmotionState,
   Gesture,
 } from "./types";
+import { AvatarLife } from "./AvatarLife";
+
+/** Stable per-avatar seed so each character gets its own motion signature. */
+function hashString(value: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
 // Real humanoid GLB assets stored locally in the app bundle.
 // These are the actual 3D character files used by the avatar system.
@@ -262,6 +273,14 @@ export default function Avatar3D({
   speakingRef.current = isSpeaking;
   thinkingRef.current = isThinking;
   gestureRef.current = gesture;
+  // Life brain + personality from the avatar profile. A fresh brain per
+  // avatar gives each character its own motion signature and restarts the
+  // idle timeline when the user switches characters.
+  const isMicRef = useRef(isMicActive);
+  const personalityRef = useRef(profile.animationProfile);
+  const lifeRef = useRef<AvatarLife>(new AvatarLife(20260927));
+  isMicRef.current = isMicActive;
+  personalityRef.current = profile.animationProfile;
 
   // Apply morph targets by name across all meshes
   const applyMorphTarget = useCallback((name: string, value: number) => {
@@ -355,6 +374,91 @@ export default function Avatar3D({
     ground.receiveShadow = true;
     scene.add(ground);
 
+    // ===== REALISM: image-based studio environment =====
+    // A small procedural room (soft key panel, cool bounce, warm rim) is
+    // pre-filtered into an environment map, so PBR materials pick up soft
+    // reflections and ambient falloff instead of looking flat and CG.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0x0a0c18);
+    const addPanel = (
+      color: number,
+      intensity: number,
+      pos: [number, number, number],
+      size: [number, number]
+    ) => {
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        side: THREE.DoubleSide,
+      });
+      material.color.multiplyScalar(intensity);
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(size[0], size[1]),
+        material
+      );
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.lookAt(0, 1.1, 0);
+      envScene.add(mesh);
+    };
+    addPanel(0xfff1dd, 3.2, [1.6, 2.4, 2.2], [3, 3]); // key softbox
+    addPanel(0x8fa6ff, 1.1, [-2.2, 1.2, 1.2], [3, 3]); // cool bounce
+    addPanel(0xffffff, 1.6, [0, 1.8, -2.6], [2.5, 2.5]); // rim
+    const envRT = pmrem.fromScene(envScene, 0.04);
+    scene.environment = envRT.texture;
+    scene.environmentIntensity = 0.55;
+    pmrem.dispose();
+    envScene.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      mesh.geometry?.dispose();
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose();
+    });
+
+    // Soft, high-quality shadows read as studio light, not hard CG edges.
+    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.radius = 4;
+    keyLight.shadow.blurSamples = 16;
+    keyLight.shadow.camera.near = 0.5;
+    keyLight.shadow.camera.far = 7;
+    keyLight.shadow.camera.left = -1.6;
+    keyLight.shadow.camera.right = 1.6;
+    keyLight.shadow.camera.top = 2.2;
+    keyLight.shadow.camera.bottom = -0.4;
+    keyLight.shadow.bias = -0.0005;
+    keyLight.shadow.camera.updateProjectionMatrix();
+    renderer.toneMappingExposure = 1.15;
+
+    // Contact shadow: a radial gradient darkens the floor right under the
+    // feet, which is what visually "grounds" a character.
+    const contactCanvas = document.createElement("canvas");
+    contactCanvas.width = 128;
+    contactCanvas.height = 128;
+    const contact2d = contactCanvas.getContext("2d");
+    if (contact2d) {
+      const grad = contact2d.createRadialGradient(64, 64, 4, 64, 64, 62);
+      grad.addColorStop(0, "rgba(0,0,0,0.55)");
+      grad.addColorStop(0.55, "rgba(0,0,0,0.22)");
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      contact2d.fillStyle = grad;
+      contact2d.fillRect(0, 0, 128, 128);
+      const contactTex = new THREE.CanvasTexture(contactCanvas);
+      contactTex.colorSpace = THREE.SRGBColorSpace;
+      const contact = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.85, 0.85),
+        new THREE.MeshBasicMaterial({
+          map: contactTex,
+          transparent: true,
+          depthWrite: false,
+          opacity: 0.9,
+        })
+      );
+      contact.rotation.x = -Math.PI / 2;
+      contact.position.y = 0.002;
+      contact.renderOrder = -1;
+      scene.add(contact);
+    }
+
     // Controls (constrained orbit) - start portrait mode
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1.0, 0);
@@ -369,17 +473,14 @@ export default function Avatar3D({
     controlsRef.current = controls;
 
     // ============================================================
-    // ANIMATION LOOP - runs continuously, reads refs for state
+    // ANIMATION LOOP - runs continuously, reads refs for state.
+    // AvatarLife decides WHAT happens (where to look, when to blink,
+    // which idle action, how to react to the conversation); this loop
+    // only applies the resulting pose to the rig, so the same behavior
+    // works with any model that exposes a humanoid bone set.
     // ============================================================
-    let mouthOpen = 0;
-    let blinkPhase = 0;
-    let gazeX = 0;
-    let gazeY = 0;
-    let headYaw = 0;
-    let headPitch = 0;
-    let breathPhase = 0;
-    let fidgetPhase = Math.random() * Math.PI * 2;
-    let nextBlinkAt = 2.5 + Math.random() * 1.5;
+    const life = lifeRef.current;
+    let lastMouth = 0;
 
     const animate = () => {
       const delta = clockRef.current.getDelta();
@@ -390,235 +491,184 @@ export default function Avatar3D({
         mixerRef.current.update(delta);
       }
 
-      // ✅ BREATHING, POSTURE, AND CLOTHING FIDGETING
-      breathPhase += delta * 1.1;
-      fidgetPhase += delta * 0.45;
-      const breathValue = Math.sin(breathPhase) * 0.06;
+      // ---- THE BRAIN: one call produces every channel for this frame ----
+      const pose = life.update({
+        delta,
+        isSpeaking: speakingRef.current,
+        isListening: isMicRef.current,
+        isThinking: thinkingRef.current,
+        gesture: gestureRef.current,
+        personality: personalityRef.current,
+      });
 
-      // Keep the whole character subtly in motion even when the GLB has no
-      // compatible idle clip or expected humanoid bone names.
       const model = modelRef.current;
-      const isDancing = gestureRef.current === "dance";
+      const bones = bonesRef.current;
+      const restOf = (bone: THREE.Bone) =>
+        boneRestRotationRef.current.get(bone.name.toLowerCase());
+
+      // ---- Body (always applied, so the rig stays alive even without bones) ----
       if (model) {
-        const weightShift = Math.sin(fidgetPhase * 0.7) * 0.025;
-        model.position.y = Math.sin(breathPhase) * 0.018;
-        model.position.x = weightShift;
-        model.rotation.y = Math.sin(fidgetPhase * 0.45) * 0.09;
-        model.rotation.z = Math.sin(fidgetPhase * 0.7) * 0.028;
+        model.position.x = pose.bodySway;
+        model.position.y = pose.bodyLift;
+        model.position.z = pose.bodyLean;
+        model.rotation.y = pose.bodyTwist;
+        model.rotation.z = pose.bodySway * 0.35;
       }
+
+      // ---- Spine / hips: breathing and weight shift ----
       const spineBone =
-        bonesRef.current.get("mixamorig:spine") ||
-        bonesRef.current.get("mixamorigspine") ||
-        bonesRef.current.get("spine") ||
-        bonesRef.current.get("spine_01") ||
-        bonesRef.current.get("mixamorig:spine1") ||
-        bonesRef.current.get("spine1") ||
-        bonesRef.current.get("chest") ||
-        bonesRef.current.get("mixamorig:hips") ||
-        bonesRef.current.get("hips");
+        bones.get("mixamorig:spine") ||
+        bones.get("mixamorigspine") ||
+        bones.get("spine") ||
+        bones.get("spine_01") ||
+        bones.get("mixamorig:spine1") ||
+        bones.get("spine1") ||
+        bones.get("chest");
       if (spineBone) {
-        const rest = boneRestRotationRef.current.get(spineBone.name.toLowerCase());
+        const rest = restOf(spineBone);
         if (rest) {
-          spineBone.rotation.x = rest.x + breathValue * 0.7;
-          spineBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.7) * 0.025;
+          spineBone.rotation.x = rest.x + pose.breath * 0.7;
+          spineBone.rotation.z = rest.z + pose.bodySway * 0.4;
         }
-        spineBone.position.y = breathValue * 0.5;
+        spineBone.position.y = pose.breath * 0.5;
       }
 
       const hipsBone =
-        bonesRef.current.get("mixamorig:hips") ||
-        bonesRef.current.get("mixamorighips") ||
-        bonesRef.current.get("hips");
+        bones.get("mixamorig:hips") ||
+        bones.get("mixamorighips") ||
+        bones.get("hips");
       if (hipsBone) {
-        const rest = boneRestRotationRef.current.get(hipsBone.name.toLowerCase());
+        const rest = restOf(hipsBone);
         if (rest) {
-          hipsBone.rotation.y = rest.y + Math.sin(fidgetPhase) * 0.06;
-          hipsBone.rotation.z = rest.z + Math.sin(fidgetPhase * 0.8) * 0.035;
+          hipsBone.rotation.y = rest.y + pose.bodyTwist * 0.8;
+          hipsBone.rotation.z = rest.z + pose.bodySway * 0.6;
         }
       }
 
+      // ---- Arms: idle fidget, idle actions, gestures, speaking emphasis ----
       const leftArm =
-        bonesRef.current.get("mixamorig:leftarm") ||
-        bonesRef.current.get("mixamorigleftarm");
+        bones.get("mixamorig:leftarm") || bones.get("mixamorigleftarm");
       const rightArm =
-        bonesRef.current.get("mixamorig:rightarm") ||
-        bonesRef.current.get("mixamorigrightarm");
-      const leftShoulder =
-        bonesRef.current.get("mixamorig:leftshoulder") ||
-        bonesRef.current.get("mixamorigleftshoulder");
-      const rightShoulder =
-        bonesRef.current.get("mixamorig:rightshoulder") ||
-        bonesRef.current.get("mixamorigrightshoulder");
-      for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
+        bones.get("mixamorig:rightarm") || bones.get("mixamorigrightarm");
+      for (const [bone, target] of [
+        [leftArm, pose.armLeft],
+        [rightArm, pose.armRight],
+      ] as const) {
         if (!bone) continue;
-        const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
+        const rest = restOf(bone);
         if (rest) {
-          bone.rotation.z = rest.z + side * (0.045 + Math.sin(fidgetPhase * 1.3 + side) * 0.03);
-          bone.rotation.x = rest.x + Math.sin(fidgetPhase * 0.9 + side) * 0.025;
+          bone.rotation.z = rest.z + target.z;
+          bone.rotation.x = rest.x + target.x;
         }
       }
-      for (const [bone, side] of [[leftShoulder, 1], [rightShoulder, -1]] as const) {
+      const leftShoulder =
+        bones.get("mixamorig:leftshoulder") ||
+        bones.get("mixamorigleftshoulder");
+      const rightShoulder =
+        bones.get("mixamorig:rightshoulder") ||
+        bones.get("mixamorigrightshoulder");
+      for (const [bone, target] of [
+        [leftShoulder, pose.armLeft],
+        [rightShoulder, pose.armRight],
+      ] as const) {
         if (!bone) continue;
-        const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
-        if (rest) bone.rotation.z = rest.z + side * Math.sin(fidgetPhase * 1.1 + side) * 0.035;
+        const rest = restOf(bone);
+        if (rest) bone.rotation.z = rest.z + target.z * 0.6;
       }
 
-      if (facialDetailsRef.current) {
-        facialDetailsRef.current.rotation.y = Math.sin(fidgetPhase * 1.7) * 0.05;
-        facialDetailsRef.current.rotation.z = Math.sin(fidgetPhase * 0.9) * 0.025;
-        facialDetailsRef.current.position.y = Math.sin(fidgetPhase * 1.4) * 0.008;
+      // ---- Head: gaze-following plus drift, nods and the thinking tilt ----
+      const headBone =
+        bones.get("head") ||
+        bones.get("mixamorig:head") ||
+        bones.get("mixamorighead") ||
+        bones.get("head_01") ||
+        bones.get("neck");
+      if (headBone) {
+        headBone.rotation.y = pose.headYaw;
+        headBone.rotation.x = pose.headPitch;
+        headBone.rotation.z = pose.headRoll;
       }
 
-      // Explicit dance performance: coordinated weight shifts and upper-body
-      // counter-motion keep it expressive without affecting normal speech.
-      if (isDancing && model) {
-        const danceTime = time * 3.2;
-        model.position.y = Math.abs(Math.sin(danceTime)) * 0.025;
-        model.rotation.y = Math.sin(danceTime * 0.5) * 0.16;
-        model.rotation.z = Math.sin(danceTime) * 0.035;
-        if (hipsBone) {
-          const rest = boneRestRotationRef.current.get(hipsBone.name.toLowerCase());
-          if (rest) {
-            hipsBone.rotation.y = rest.y + Math.sin(danceTime) * 0.22;
-            hipsBone.rotation.z = rest.z + Math.sin(danceTime * 0.5) * 0.08;
-          }
-        }
-        for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
-          if (!bone) continue;
-          const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
-          if (rest) {
-            bone.rotation.z = rest.z + side * (0.22 + Math.sin(danceTime + side) * 0.18);
-            bone.rotation.x = rest.x + Math.sin(danceTime * 0.7 + side) * 0.12;
-          }
-        }
-      }
-
-      // ✅ BLINKING (morph or eyelid bone)
-      if (time >= nextBlinkAt) {
-        blinkPhase = 1;
-        nextBlinkAt = time + 2.5 + Math.random() * 1.5;
-      } else {
-        blinkPhase = Math.max(blinkPhase - delta * 8, 0);
-      }
-      const blinkRef = morphRef.current;
-      const blinkMorph =
-        blinkRef?.get("blink") ??
-        blinkRef?.get("eye_blink") ??
-        blinkRef?.get("blink_left") ??
-        blinkRef?.get("eyes_closed");
-      if (blinkMorph !== undefined) {
-        applyMorphTarget("blink", blinkPhase);
-      } else {
-        const eyelidL =
-          bonesRef.current.get("eyelid_l") ??
-          bonesRef.current.get("eye_lid_l") ??
-          bonesRef.current.get("lid_l");
-        const eyelidR =
-          bonesRef.current.get("eyelid_r") ??
-          bonesRef.current.get("eye_lid_r") ??
-          bonesRef.current.get("lid_r");
-        if (eyelidL) eyelidL.rotation.x = -blinkPhase * 0.5;
-        if (eyelidR) eyelidR.rotation.x = -blinkPhase * 0.5;
-      }
-
-      // ✅ GAZE (eye bones)
-      const gazeTargetX = Math.sin(time * 0.3) * 0.03;
-      const gazeTargetY = Math.cos(time * 0.25) * 0.02;
-      gazeX += (gazeTargetX - gazeX) * delta * 8;
-      gazeY += (gazeTargetY - gazeY) * delta * 8;
-
+      // ---- Eyes: ballistic saccades toward the current attention target ----
       const eyeL =
-        bonesRef.current.get("eye_l") ??
-        bonesRef.current.get("left_eye") ??
-        bonesRef.current.get("eye_left");
+        bones.get("eye_l") ||
+        bones.get("left_eye") ||
+        bones.get("eye_left");
       const eyeR =
-        bonesRef.current.get("eye_r") ??
-        bonesRef.current.get("right_eye") ??
-        bonesRef.current.get("eye_right");
+        bones.get("eye_r") ||
+        bones.get("right_eye") ||
+        bones.get("eye_right");
       if (eyeL) {
-        eyeL.rotation.y = gazeX;
-        eyeL.rotation.x = gazeY;
+        eyeL.rotation.y = pose.gazeX;
+        eyeL.rotation.x = pose.gazeY;
       }
       if (eyeR) {
-        eyeR.rotation.y = gazeX;
-        eyeR.rotation.x = gazeY;
+        eyeR.rotation.y = pose.gazeX;
+        eyeR.rotation.x = pose.gazeY;
       }
 
-      // ✅ HEAD MOVEMENT
-      const speakingMotion = speakingRef.current ? Math.sin(time * 2.3) * 0.025 : 0;
-      headYaw += (Math.sin(time * 0.4) * 0.04 + speakingMotion - headYaw) * delta * 6;
-      headPitch += (Math.sin(time * 0.2) * 0.02 + speakingMotion * 0.35 - headPitch) * delta * 4;
-      const headBone =
-        bonesRef.current.get("head") ??
-        bonesRef.current.get("mixamorig:head") ??
-        bonesRef.current.get("mixamorighead") ??
-        bonesRef.current.get("head_01") ??
-        bonesRef.current.get("neck");
-      if (headBone) {
-        headBone.rotation.y = headYaw;
-        headBone.rotation.x = headPitch;
+      // ---- Blinking (morph targets when present, else eyelid bones) ----
+      const morph = morphRef.current;
+      if (
+        morph?.has("blink") ||
+        morph?.has("eye_blink") ||
+        morph?.has("blink_left")
+      ) {
+        applyMorphTarget("blink", pose.blink);
+      } else {
+        const eyelidL =
+          bones.get("eyelid_l") ||
+          bones.get("eye_lid_l") ||
+          bones.get("lid_l");
+        const eyelidR =
+          bones.get("eyelid_r") ||
+          bones.get("eye_lid_r") ||
+          bones.get("lid_r");
+        if (eyelidL) eyelidL.rotation.x = -pose.blink * 0.5;
+        if (eyelidR) eyelidR.rotation.x = -pose.blink * 0.5;
       }
 
-      // Natural conversational emphasis: small alternating hand gestures while
-      // speaking, with enough restraint to preserve eye contact and posture.
-      if (speakingRef.current && !isDancing) {
-        for (const [bone, side] of [[leftArm, 1], [rightArm, -1]] as const) {
-          if (!bone) continue;
-          const rest = boneRestRotationRef.current.get(bone.name.toLowerCase());
-          if (rest) {
-            bone.rotation.z = rest.z + side * Math.max(0, Math.sin(time * 2.1 + side)) * 0.045;
-            bone.rotation.x = rest.x + Math.sin(time * 1.7 + side) * 0.025;
-          }
-        }
+      // ---- Fallback facial detail meshes follow the head ----
+      if (facialDetailsRef.current) {
+        facialDetailsRef.current.rotation.y = pose.headYaw * 0.6;
+        facialDetailsRef.current.rotation.x = pose.headPitch * 0.6;
       }
 
-      // Hair reacts to movement independently, producing soft secondary motion.
+      // ---- Hair: secondary motion that lags behind the body ----
       if (model) {
         model.traverse((child) => {
           const name = child.name.toLowerCase();
-          if (!name.includes("hair") && !name.includes("ponytail") && !name.includes("bang")) return;
+          if (
+            !name.includes("hair") &&
+            !name.includes("ponytail") &&
+            !name.includes("bang")
+          )
+            return;
           const hair = child as THREE.Object3D;
-          hair.rotation.z = Math.sin(time * (isDancing ? 4.2 : 1.2)) * (isDancing ? 0.07 : 0.018);
-          hair.rotation.y = Math.cos(time * (isDancing ? 3.1 : 0.8)) * (isDancing ? 0.05 : 0.012);
+          hair.rotation.z =
+            Math.sin(time * 1.2) * 0.018 + pose.bodyTwist * 0.4;
+          hair.rotation.y = Math.cos(time * 0.8) * 0.012;
         });
       }
 
-      // ✅ SPEECH / LIP SYNC (morph targets)
-      const morph = morphRef.current;
+      // ---- Lip sync ----
       const jawMorphName = morph?.has("jawopen") ? "jawopen" : "jaw_open";
-      const mouthMorphName = morph?.has("mouthopen") ? "mouthopen" : "mouth_open";
-
-      if (speakingRef.current) {
-        const mouthTarget = 0.35 + Math.sin(time * 8.5) * 0.25;
-        mouthOpen += (mouthTarget - mouthOpen) * Math.min(delta * 14, 0.2);
-
-        const morph = morphRef.current;
-        if (morph && morph.has(jawMorphName)) applyMorphTarget(jawMorphName, mouthOpen * 0.6);
-        if (morph && morph.has(mouthMorphName)) applyMorphTarget(mouthMorphName, mouthOpen * 0.8);
-
-        // Alternate vowel shapes
-        const vowelCycle = Math.sin(time * 4) * 0.5 + 0.5;
-        if (morph && morph.has("aa")) applyMorphTarget("aa", mouthOpen * 0.4 * (1 - vowelCycle));
-        if (morph && morph.has("ee")) applyMorphTarget("ee", mouthOpen * 0.3 * vowelCycle);
-        if (morph && morph.has("oo")) applyMorphTarget("oo", mouthOpen * 0.3 * (1 - vowelCycle * 0.5));
-        if (morph && morph.has("smi")) applyMorphTarget("smi", 0.15);
-        if (morph && morph.has("smile")) applyMorphTarget("smile", 0.15);
-      } else {
-        mouthOpen += (0 - mouthOpen) * Math.min(delta * 8, 0.15);
-        const morph = morphRef.current;
-        if (morph && morph.has(jawMorphName)) applyMorphTarget(jawMorphName, 0);
-        if (morph && morph.has(mouthMorphName)) applyMorphTarget(mouthMorphName, 0);
-        if (morph && morph.has("smi")) applyMorphTarget("smi", 0.05);
-        if (morph && morph.has("smile")) applyMorphTarget("smile", 0.05);
-      }
-
-      // ✅ THINKING
-      if (thinkingRef.current) {
-        if (headBone) {
-          headBone.rotation.z = Math.sin(time * 0.5) * 0.04;
-          headBone.rotation.x = 0.05 + Math.sin(time * 0.3) * 0.03;
-        }
-      }
+      const mouthMorphName = morph?.has("mouthopen")
+        ? "mouthopen"
+        : "mouth_open";
+      // Smooth the syllable envelope so the mouth never snaps between bursts.
+      lastMouth += (pose.mouth - lastMouth) * Math.min(delta * 16, 0.6);
+      if (morph && morph.has(jawMorphName))
+        applyMorphTarget(jawMorphName, lastMouth * 0.6);
+      if (morph && morph.has(mouthMorphName))
+        applyMorphTarget(mouthMorphName, lastMouth * 0.8);
+      if (morph && morph.has("aa")) applyMorphTarget("aa", lastMouth * 0.4);
+      if (morph && morph.has("ee")) applyMorphTarget("ee", lastMouth * 0.25);
+      if (morph && morph.has("oo")) applyMorphTarget("oo", lastMouth * 0.2);
+      if (morph && morph.has("smi"))
+        applyMorphTarget("smi", lastMouth > 0.15 ? 0.12 : 0.05);
+      if (morph && morph.has("smile"))
+        applyMorphTarget("smile", lastMouth > 0.15 ? 0.12 : 0.05);
 
       // Render
       controls.update();
@@ -628,7 +678,7 @@ export default function Avatar3D({
 
     animIdRef.current = requestAnimationFrame(animate);
 
-    // ✅ Resize handler - update camera/renderer AND refit framing when the
+    // âœ… Resize handler - update camera/renderer AND refit framing when the
     // aspect changes significantly (e.g. orientation change on a phone) so the
     // full body stays framed responsively without disrupting in-place rotation.
     let lastAspect = container.clientWidth / container.clientHeight;
@@ -657,7 +707,7 @@ export default function Avatar3D({
     };
     window.addEventListener("resize", onResize);
 
-    // ✅ Click handler
+    // âœ… Click handler
     const onClick = (e: MouseEvent) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
@@ -672,7 +722,7 @@ export default function Avatar3D({
     };
     container.addEventListener("click", onClick);
 
-    // ✅ Cleanup - ONLY on component unmount
+    // âœ… Cleanup - ONLY on component unmount
     return () => {
       window.removeEventListener("resize", onResize);
       container.removeEventListener("click", onClick);
@@ -693,7 +743,7 @@ export default function Avatar3D({
       loadedProfileIdRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // ✅ EMPTY DEPS - scene setup runs ONCE, never on state changes
+  }, []); // âœ… EMPTY DEPS - scene setup runs ONCE, never on state changes
 
   // ============================================================
   // MODEL LOADING - runs ONLY when profile.id changes.
@@ -727,11 +777,11 @@ export default function Avatar3D({
       (gltf) => {
         const model = gltf.scene;
 
-        // ✅ Normalize the humanoid model (scale to 1.7m, center feet on ground)
+        // âœ… Normalize the humanoid model (scale to 1.7m, center feet on ground)
         const norm = normalizeHumanoidModel(model);
         addFacialDetails(model, profile);
 
-        // ✅ IMPORTANT: Preserve authored materials - DO NOT overwrite PBR maps
+        // âœ… IMPORTANT: Preserve authored materials - DO NOT overwrite PBR maps
         // The previous code traversed all meshes and replaced roughness/metalness/envMapIntensity,
         // which discards the model's original PBR maps and texture maps.
         // We only ensure shadows and basic properties if needed, but skip the full overwrite.
@@ -739,7 +789,7 @@ export default function Avatar3D({
         sceneRef.current?.add(model);
         modelRef.current = model;
 
-        // ✅ Map skeleton bones (after normalization so bone names are consistent)
+        // âœ… Map skeleton bones (after normalization so bone names are consistent)
         const boneMap = new Map<string, THREE.Bone>();
         model.traverse((child) => {
           const bone = child as THREE.Bone;
@@ -753,7 +803,7 @@ export default function Avatar3D({
         );
         facialDetailsRef.current = model.getObjectByName("avatar-facial-details") as THREE.Group | null;
 
-        // ✅ Map morph targets
+        // âœ… Map morph targets
         const morphMap = new Map<string, number>();
         model.traverse((child) => {
           const mesh = child as THREE.Mesh;
@@ -769,7 +819,11 @@ export default function Avatar3D({
         });
         morphRef.current = morphMap;
 
-        // ✅ Setup animation mixer
+        // Fresh life brain for the new character: its own motion signature
+        // and a fresh idle timeline.
+        lifeRef.current = new AvatarLife(hashString(profile.id));
+
+        // âœ… Setup animation mixer
         if (gltf.animations.length > 0) {
           const mixer = new THREE.AnimationMixer(model);
           mixerRef.current = mixer;
@@ -791,7 +845,7 @@ export default function Avatar3D({
           hasActiveAnimationRef.current = false;
         }
 
-        // ✅ Fit camera to avatar based on current cameraMode
+        // âœ… Fit camera to avatar based on current cameraMode
         if (cameraRef.current && controlsRef.current && containerRef.current) {
           const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
           fitCameraToAvatar(model, cameraRef.current, controlsRef.current, cameraModeRef.current, aspect);
@@ -815,10 +869,10 @@ export default function Avatar3D({
         onStateChange?.("ERROR");
       }
     );
-    // ✅ ONLY depends on profile.id - conversation state does NOT trigger reload
+    // âœ… ONLY depends on profile.id - conversation state does NOT trigger reload
   }, [profile.id]);
 
-  // ✅ Toggle between PORTRAIT and FULL_BODY camera framing modes
+  // âœ… Toggle between PORTRAIT and FULL_BODY camera framing modes
   const toggleCameraMode = () => {
     const next = cameraMode === "PORTRAIT" ? "FULL_BODY" : "PORTRAIT";
     cameraModeRef.current = next;
@@ -858,7 +912,7 @@ export default function Avatar3D({
       {modelStatus === "error" && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0d0d20]/90 p-6">
           <div className="text-center">
-            <p className="mb-2 text-2xl">⚠️</p>
+            <p className="mb-2 text-2xl">âš ï¸</p>
             <p className="mb-1 text-sm font-medium text-white">
               Couldn't load the avatar model.
             </p>

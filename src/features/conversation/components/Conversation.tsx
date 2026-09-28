@@ -3,6 +3,7 @@
   useRef,
 } from "react";
 
+import MessageErrorBoundary from "./MessageErrorBoundary";
 import MessageRenderer from "./MessageRenderer";
 
 import type {
@@ -69,11 +70,13 @@ export default function Conversation({
                 : "bg-zinc-900 text-white"
             }`}
           >
-            <MessageRenderer
-              message={message}
-              onDownloadImage={onDownloadImage}
-              onDownloadVideo={onDownloadVideo}
-            />
+            <MessageErrorBoundary>
+              <MessageRenderer
+                message={message}
+                onDownloadImage={onDownloadImage}
+                onDownloadVideo={onDownloadVideo}
+              />
+            </MessageErrorBoundary>
 
             {message.status === "streaming" && (
               <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-zinc-400 align-middle" />
