@@ -26,7 +26,9 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [isRecording, setIsRecording] = React.useState(false);
   const [recognitionRef, setRecognitionRef] = React.useState<any>(null);
-  const [showRobot, setShowRobot] = React.useState(false);
+  // Keep the live avatar visible by default so the intended 3D assistant is
+  // present in the interface instead of being hidden behind an extra toggle.
+  const [showRobot, setShowRobot] = React.useState(true);
   const [robotGender, setRobotGender] = React.useState<"male" | "female" | "neutral">("male");
 
   const handleVoiceInput = () => {
