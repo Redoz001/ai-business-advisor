@@ -8,6 +8,7 @@
 import {
   MovieRenderer,
   type RenderedShot,
+  type ShotFrame,
 } from "./MovieRenderer";
 import {
   getCachedKeyframe,
@@ -37,6 +38,20 @@ export type MovieProductionResult = {
 
 const KEYFRAME_W = 1024;
 const KEYFRAME_H = 432; // 2.39:1
+
+/**
+ * Keyframes generated per shot. The upstream model only produces stills, so
+ * each shot is painted as a short run of ACTION BEATS that the renderer flows
+ * into each other — one still per shot is what reads as a slideshow.
+ */
+const FRAMES_PER_SHOT = 3;
+
+/** Prompts that nudge the action forward from beat to beat. */
+const MOTION_BEATS = [
+  "mid-action, dynamic movement, subtle motion blur",
+  "action climax, peak movement, energetic",
+  "follow-through motion, body in motion, motion blur",
+];
 
 /** Replicates the edge function's keyframe prompt (kept in sync). */
 function buildKeyframePrompt(
@@ -254,53 +269,66 @@ export class MovieEngine {
       });
 
       const rendered: RenderedShot[] = [];
+      const totalFrames = totalShots * FRAMES_PER_SHOT;
       for (const shot of scene.shots) {
         if (signal?.aborted) break;
-        const prompt = buildKeyframePrompt(manifest, scene, shot);
-        const seed = shotSeed(shot);
-        const cacheKey = `${manifest.title}:${shot.id}:${seed}`;
+        const basePrompt = buildKeyframePrompt(manifest, scene, shot);
+        const baseSeed = shotSeed(shot);
+        const frames: ShotFrame[] = [];
 
-        let dataUrl = await getCachedKeyframe(cacheKey);
-        if (!dataUrl) {
-          dataUrl = await fetchKeyframe(prompt, seed, signal);
+        // Paint each shot as a run of action beats.
+        for (let beat = 0; beat < FRAMES_PER_SHOT; beat++) {
+          if (signal?.aborted) break;
+          const prompt =
+            beat === 0
+              ? basePrompt
+              : `${basePrompt}, ${MOTION_BEATS[beat % MOTION_BEATS.length]}`;
+          const seed = baseSeed + beat * 977;
+          const cacheKey = `${manifest.title}:${shot.id}:${seed}`;
+
+          let dataUrl = await getCachedKeyframe(cacheKey);
+          if (!dataUrl) {
+            dataUrl = await fetchKeyframe(prompt, seed, signal);
+            try {
+              await cacheKeyframe(cacheKey, dataUrl);
+            } catch (cacheErr) {
+              // A quota/private-mode cache failure must not kill production.
+              console.warn("Keyframe cache skipped:", cacheErr);
+            }
+          }
+
+          // Erase the Pollinations lockup and stamp ReuNexus branding before
+          // the frame ever reaches the screen. Falls back to the raw frame.
+          let img = await loadImage(dataUrl, signal);
           try {
-            await cacheKeyframe(cacheKey, dataUrl);
-          } catch (cacheErr) {
-            // A quota/private-mode cache failure must not kill production.
-            console.warn("Keyframe cache skipped:", cacheErr);
+            const brandedUrl = await brandImageUrl(dataUrl);
+            if (brandedUrl) {
+              img = await loadImage(brandedUrl, signal);
+              URL.revokeObjectURL(brandedUrl);
+            }
+          } catch {
+            /* keep the unbranded frame rather than failing the shot */
           }
+
+          frames.push({
+            image: img,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+          });
+          keyframeCount += 1;
+
+          emit(onProgress, {
+            phase: "fetching-keyframes",
+            sceneIndex: sIdx,
+            sceneTotal: manifest.scenes.length,
+            shotIndex: keyframeCount,
+            shotTotal: totalFrames,
+            renderedSeconds,
+            detail: `Painting ${shot.camera} shot · frame ${keyframeCount}/${totalFrames}`,
+          });
         }
 
-        // Erase the Pollinations lockup and stamp ReuNexus branding before the
-        // frame ever reaches the screen. Falls back to the raw frame on error.
-        let img = await loadImage(dataUrl, signal);
-        try {
-          const brandedUrl = await brandImageUrl(dataUrl);
-          if (brandedUrl) {
-            img = await loadImage(brandedUrl, signal);
-            URL.revokeObjectURL(brandedUrl);
-          }
-        } catch {
-          /* keep the unbranded frame rather than failing the shot */
-        }
-
-        rendered.push({
-          shot,
-          image: img,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-        });
-        keyframeCount += 1;
-
-        emit(onProgress, {
-          phase: "fetching-keyframes",
-          sceneIndex: sIdx,
-          sceneTotal: manifest.scenes.length,
-          shotIndex: keyframeCount,
-          shotTotal: totalShots,
-          renderedSeconds,
-          detail: `Painted shot ${keyframeCount}/${totalShots}`,
-        });
+        if (frames.length > 0) rendered.push({ shot, frames });
       }
 
       if (signal?.aborted || rendered.length === 0) break;

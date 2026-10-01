@@ -9,11 +9,20 @@ import type {
   MovieShot,
 } from "./types";
 
-export type RenderedShot = {
-  shot: MovieShot;
+export type ShotFrame = {
   image: CanvasImageSource;
   width: number;
   height: number;
+};
+
+export type RenderedShot = {
+  shot: MovieShot;
+  /**
+   * Several keyframes per shot, cycled and cross-dissolved by the renderer.
+   * One still per shot reads as a slideshow; a short run of action beats
+   * flowing into each other reads as motion.
+   */
+  frames: ShotFrame[];
 };
 
 export type RenderSceneInput = {
@@ -154,7 +163,7 @@ export class MovieRenderer {
     return finished;
   }
 
-  /** Draws one shot (camera motion + optional dissolve from prev). */
+  /** Draws one shot: camera motion plus flowing cross-dissolves. */
   private async drawShot(
     current: RenderedShot,
     prev: RenderedShot | null,
@@ -163,27 +172,54 @@ export class MovieRenderer {
     useGrain: boolean,
     onTick: (t: number) => void
   ): Promise<void> {
+    const frames = current.frames.length > 0 ? current.frames : [];
     const totalFrames = Math.max(1, Math.round(seconds * fps));
     const start = performance.now();
+    const beats = Math.max(1, frames.length);
+    const beatSeconds = seconds / beats;
 
     for (let f = 0; f < totalFrames; f++) {
       const t = f / totalFrames;
+      const shotTime = t * seconds;
+      const beatIndex = Math.min(beats - 1, Math.floor(shotTime / beatSeconds));
+      const localT = (shotTime - beatIndex * beatSeconds) / beatSeconds;
 
-      const cur = kenBurns(current.shot.camera, t);
-      this.drawCover(current, cur.scale, cur.panX, cur.panY);
+      const cur = kenBurns(current.shot.camera, localT);
+      this.drawCover(frames[beatIndex], cur.scale, cur.panX, cur.panY);
 
-      if (prev && current.shot.transition === "dissolve" && t < 0.3) {
-        const blend = 1 - easeInOut(t / 0.3);
+      // Flow into the NEXT keyframe across the last third of this beat. This
+      // is what turns separate stills into continuous motion.
+      const nextIndex = beatIndex + 1;
+      if (nextIndex < beats && localT > 0.6) {
+        const blend = (localT - 0.6) / 0.4;
+        const nxt = kenBurns(current.shot.camera, 0);
+        this.ctx.globalAlpha = blend;
+        this.drawCover(
+          frames[nextIndex],
+          nxt.scale * 1.03,
+          nxt.panX,
+          nxt.panY
+        );
+        this.ctx.globalAlpha = 1;
+      }
+
+      // Scene-to-scene dissolve, driven by the screenplay's transition.
+      if (prev && current.shot.transition === "dissolve" && t < 0.22) {
+        const blend = 1 - easeInOut(t / 0.22);
         this.ctx.globalAlpha = blend;
         const pk = kenBurns(prev.shot.camera, 1);
-        this.drawCover(prev, pk.scale, pk.panX, pk.panY);
+        const pf =
+          prev.frames.length > 0
+            ? prev.frames[prev.frames.length - 1]
+            : (prev as unknown as ShotFrame);
+        this.drawCover(pf, pk.scale, pk.panX, pk.panY);
         this.ctx.globalAlpha = 1;
       }
 
       this.drawVignette();
       if (useGrain) this.drawGrain();
       if (current.shot.caption) this.drawCaption(current.shot.caption);
-      if (t < 0.4) this.drawHeadingAlpha(1 - t / 0.4);
+      if (t < 0.25) this.drawHeadingAlpha(1 - t / 0.25);
 
       onTick(t);
       await nextFrame();
@@ -193,16 +229,16 @@ export class MovieRenderer {
     }
   }
 
-  /** Draw an image to fill the canvas at a given scale + pan (cover crop). */
+  /** Draw a frame to fill the canvas at a given scale + pan (cover crop). */
   private drawCover(
-    shot: RenderedShot,
+    frame: ShotFrame,
     scale: number,
     panX: number,
     panY: number
   ): void {
-    const img = shot.image;
-    const iw = shot.width || (img as HTMLImageElement).naturalWidth;
-    const ih = shot.height || (img as HTMLImageElement).naturalHeight;
+    const img = frame.image;
+    const iw = frame.width || (img as HTMLImageElement).naturalWidth;
+    const ih = frame.height || (img as HTMLImageElement).naturalHeight;
     if (!iw || !ih) return;
 
     const canvasAspect = this.width / this.height;

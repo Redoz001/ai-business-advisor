@@ -21,16 +21,17 @@ function hashString(value: string): number {
 }
 
 // Real humanoid GLB assets stored locally in the app bundle.
-// These are the actual 3D character files used by the avatar system.
-// - Xbot.glb    : realistic rigged male humanoid with skeletal + face morphs
-// - Michelle.glb: realistic rigged female humanoid with blendshapes + animations
+// - realistic-male.glb / realistic-female.glb: photoreal-skinned humans with
+//   embedded PBR skin/hair/outfit textures, real eyeball meshes, eye bones,
+//   and a full ARKit face rig (60 blendshapes: eyelids, brows, jaw, 15
+//   visemes) — these are the characters the studio actually shows.
+// - Xbot.glb / Michelle.glb: older Mixamo samples kept as fallbacks.
 const MODEL_URLS: Record<string, string> = {
-  // Male / robotic avatars use the male rig.
-  "male-human-1": "/models/Xbot.glb",
-  "robotic-1": "/models/Xbot.glb",
-  // Female / futuristic avatars use the female rig.
-  "futuristic-1": "/models/Michelle.glb",
-  "female-human-1": "/models/Michelle.glb",
+  // Human avatars use the photoreal rigged characters.
+  "male-human-1": "/models/realistic-male.glb",
+  "female-human-1": "/models/realistic-female.glb",
+  "futuristic-1": "/models/realistic-female.glb",
+  "robotic-1": "/models/realistic-male.glb",
 };
 
 type Avatar3DProps = {
@@ -182,55 +183,237 @@ function normalizeHumanoidModel(model: THREE.Group) {
   };
 }
 
-function addFacialDetails(model: THREE.Group, profile: AvatarProfile) {
-  const head = model.getObjectByName("mixamorig:Head") ??
+/**
+ * Builds a believable skin texture procedurally: a soft tonal gradient plus
+ * mottling and fine grain, so a model shipped WITHOUT any texture (like
+ * Xbot.glb, which has zero images) no longer reads as flat coloured plastic.
+ */
+function createProceduralSkinTexture(baseHex: number): THREE.CanvasTexture {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const base = new THREE.Color(baseHex);
+  const grad = ctx.createLinearGradient(0, 0, 0, size);
+  grad.addColorStop(0, base.clone().offsetHSL(0, 0.02, 0.05).getStyle());
+  grad.addColorStop(0.5, base.getStyle());
+  grad.addColorStop(1, base.clone().offsetHSL(0, -0.02, -0.05).getStyle());
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Mottled tone variation keeps large flat areas from looking painted.
+  for (let i = 0; i < 1200; i++) {
+    const c = base
+      .clone()
+      .offsetHSL(
+        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.1,
+        (Math.random() - 0.5) * 0.08
+      );
+    ctx.fillStyle = `rgba(${(c.r * 255) | 0},${(c.g * 255) | 0},${(c.b * 255) | 0},0.05)`;
+    ctx.beginPath();
+    ctx.arc(
+      Math.random() * size,
+      Math.random() * size,
+      6 + Math.random() * 40,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+
+  // Fine grain stands in for pores / skin texture.
+  const image = ctx.getImageData(0, 0, size, size);
+  for (let i = 0; i < image.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 12;
+    image.data[i] = Math.max(0, Math.min(255, image.data[i] + n));
+    image.data[i + 1] = Math.max(0, Math.min(255, image.data[i + 1] + n));
+    image.data[i + 2] = Math.max(0, Math.min(255, image.data[i + 2] + n));
+  }
+  ctx.putImageData(image, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/**
+ * Turns authored CG materials into believable ones. Both shipped models use
+ * `metallic: 0.5`, which is what makes skin look like grey plastic; skin and
+ * cloth are dielectric, so the metal is removed and roughness is rebalanced.
+ * Authored colour/normal/roughness MAPS are always preserved.
+ */
+function applyRealisticMaterials(model: THREE.Group): void {
+  const skinCache = new Map<number, THREE.CanvasTexture>();
+
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+
+    for (const mat of materials) {
+      const std = mat as THREE.MeshStandardMaterial;
+      if (!std || typeof std.roughness !== "number") continue;
+
+      std.metalness = Math.min(std.metalness ?? 0, 0.06);
+      std.roughness = Math.min(Math.max(std.roughness ?? 0.6, 0.45), 0.82);
+      std.envMapIntensity = 0.8;
+      if (std.normalScale) std.normalScale.set(0.7, 0.7);
+
+      // A model with no colour map gets a generated skin texture instead.
+      if (!std.map) {
+        const key = std.color?.getHex() ?? 0xffffff;
+        let skin = skinCache.get(key);
+        if (!skin) {
+          skin = createProceduralSkinTexture(key);
+          skinCache.set(key, skin);
+        }
+        std.map = skin;
+        std.color = new THREE.Color(0xffffff);
+        std.needsUpdate = true;
+      }
+    }
+
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  });
+}
+
+/**
+ * Adds eyes (and a hair cap) that read as a face. The shipped models have no
+ * eyeball geometry, so they are built at real human proportions and PARENTED
+ * TO THE HEAD BONE, so they follow every head movement instead of floating in
+ * world space. Returns the eye group so the render loop can drive gaze/blink.
+ */
+function addFacialDetails(
+  model: THREE.Group,
+  profile: AvatarProfile
+): THREE.Group | null {
+  const head =
+    model.getObjectByName("mixamorig:Head") ??
     model.getObjectByName("Head") ??
     model.getObjectByName("head");
-  if (!head) return;
+  if (!head) return null;
 
   const headPosition = new THREE.Vector3();
   head.getWorldPosition(headPosition);
+
   const details = new THREE.Group();
   details.name = "avatar-facial-details";
+  head.add(details);
+  details.updateWorldMatrix(true, false);
 
-  const eyeWhite = new THREE.MeshStandardMaterial({
-    color: 0xf4f1eb,
-    roughness: 0.35,
-  });
-  const iris = new THREE.MeshStandardMaterial({
-    color: profile.eyeColor,
-    roughness: 0.25,
-  });
-  const hair = new THREE.MeshStandardMaterial({
-    color: profile.hairColor,
-    roughness: 0.75,
+  // World-space anchors converted into the head bone's local space.
+  const toLocal = (x: number, y: number, z: number) =>
+    details.worldToLocal(new THREE.Vector3(x, y, z));
+
+  // Realistic rigs already ship eyeballs (exposed as LeftEye/RightEye bones)
+  // and their own hair mesh. Adding ours on top would produce double eyes and
+  // a bald cap over real hair, so detect those cases and skip.
+  const hasEyeBones =
+    !!model.getObjectByName("LeftEye") || !!model.getObjectByName("RightEye");
+  let hasHair = false;
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    if ((mesh.name ?? "").toLowerCase().includes("hair")) {
+      hasHair = true;
+      return;
+    }
+    if (mats.some((m) => (m?.name ?? "").toLowerCase().includes("hair"))) {
+      hasHair = true;
+    }
   });
 
-  const eyeGeometry = new THREE.SphereGeometry(0.028, 20, 14);
-  const irisGeometry = new THREE.SphereGeometry(0.013, 16, 10);
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(eyeGeometry, eyeWhite);
-    eye.position.set(headPosition.x + side * 0.045, headPosition.y + 0.012, headPosition.z + 0.105);
-    details.add(eye);
+  let eyes: THREE.Group | null = null;
 
-    const pupil = new THREE.Mesh(irisGeometry, iris);
-    pupil.position.set(headPosition.x + side * 0.045, headPosition.y + 0.012, headPosition.z + 0.13);
-    details.add(pupil);
+  if (!hasEyeBones) {
+    const scleraMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf1ebe2,
+      roughness: 0.3,
+      metalness: 0,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.25,
+      envMapIntensity: 1.1,
+    });
+    const irisMat = new THREE.MeshPhysicalMaterial({
+      color: profile.eyeColor,
+      roughness: 0.2,
+      metalness: 0,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+      envMapIntensity: 1.4,
+    });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0b0b0d });
+
+    // Real human proportions: ~12.5mm eyeball radius, ~63mm interpupillary.
+    const scleraGeo = new THREE.SphereGeometry(0.0125, 24, 16);
+    const irisGeo = new THREE.SphereGeometry(0.0062, 20, 14);
+    const pupilGeo = new THREE.SphereGeometry(0.0026, 16, 12);
+
+    eyes = new THREE.Group();
+    eyes.name = "avatar-eyes";
+    details.add(eyes);
+
+    for (const side of [-1, 1]) {
+      const socket = toLocal(
+        headPosition.x + side * 0.0315,
+        headPosition.y + 0.012,
+        headPosition.z + 0.097
+      );
+
+      const eye = new THREE.Mesh(scleraGeo, scleraMat);
+      eye.position.copy(socket);
+      eyes.add(eye);
+
+      // Iris/pupil are flattened lenses sitting on the eyeball surface.
+      const iris = new THREE.Mesh(irisGeo, irisMat);
+      iris.scale.set(1, 1, 0.4);
+      iris.position.copy(socket).add(new THREE.Vector3(0, 0, 0.0113));
+      eyes.add(iris);
+
+      const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+      pupil.scale.set(1, 1, 0.4);
+      pupil.position.copy(socket).add(new THREE.Vector3(0, 0, 0.0126));
+      eyes.add(pupil);
+    }
   }
 
-  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hair);
-  hairCap.scale.set(0.17, 0.16, 0.15);
-  hairCap.position.set(headPosition.x, headPosition.y + 0.07, headPosition.z - 0.015);
-  details.add(hairCap);
+  if (!hasHair) {
+    const hairMat = new THREE.MeshStandardMaterial({
+      color: profile.hairColor,
+      roughness: 0.72,
+      metalness: 0,
+      envMapIntensity: 0.7,
+    });
 
-  if (profile.hairStyle === "long") {
-    const hairBack = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hair);
-    hairBack.scale.set(0.19, 0.25, 0.13);
-    hairBack.position.set(headPosition.x, headPosition.y - 0.05, headPosition.z - 0.07);
-    details.add(hairBack);
+    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hairMat);
+    hairCap.scale.set(0.17, 0.16, 0.15);
+    hairCap.position.copy(
+      toLocal(headPosition.x, headPosition.y + 0.07, headPosition.z - 0.015)
+    );
+    details.add(hairCap);
+
+    if (profile.hairStyle === "long") {
+      const hairBack = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hairMat);
+      hairBack.scale.set(0.19, 0.25, 0.13);
+      hairBack.position.copy(
+        toLocal(headPosition.x, headPosition.y - 0.05, headPosition.z - 0.07)
+      );
+      details.add(hairBack);
+    }
   }
 
-  model.add(details);
+  return eyes;
 }
 
 export default function Avatar3D({
@@ -258,6 +441,8 @@ export default function Avatar3D({
   const bonesRef = useRef<Map<string, THREE.Bone>>(new Map());
   const boneRestRotationRef = useRef<Map<string, THREE.Euler>>(new Map());
   const facialDetailsRef = useRef<THREE.Group | null>(null);
+  // Eyeballs built for models that ship without any (they follow the head bone).
+  const eyeGroupRef = useRef<THREE.Group | null>(null);
   const morphRef = useRef<Map<string, number>>(new Map());
   const loadedProfileIdRef = useRef<string | null>(null);
   const hasActiveAnimationRef = useRef(false);
@@ -285,13 +470,25 @@ export default function Avatar3D({
   // Apply morph targets by name across all meshes
   const applyMorphTarget = useCallback((name: string, value: number) => {
     if (!modelRef.current) return;
-    const lowerName = name.toLowerCase();
+    // Realistic models use ARKit-style camelCase names (eyeBlinkLeft), while
+    // others use lowercase (jawopen), so match case-insensitively.
+    const wanted = name.toLowerCase();
+    const amount = THREE.MathUtils.clamp(value, 0, 1);
     modelRef.current.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (mesh.isMesh && mesh.morphTargetDictionary && mesh.morphTargetInfluences) {
-        const idx = mesh.morphTargetDictionary[lowerName];
+        let idx = mesh.morphTargetDictionary[name];
+        if (idx === undefined) idx = mesh.morphTargetDictionary[wanted];
+        if (idx === undefined) {
+          for (const key of Object.keys(mesh.morphTargetDictionary)) {
+            if (key.toLowerCase() === wanted) {
+              idx = mesh.morphTargetDictionary[key];
+              break;
+            }
+          }
+        }
         if (idx !== undefined) {
-          mesh.morphTargetInfluences[idx] = THREE.MathUtils.clamp(value, 0, 1);
+          mesh.morphTargetInfluences[idx] = amount;
         }
       }
     });
@@ -481,6 +678,12 @@ export default function Avatar3D({
     // ============================================================
     const life = lifeRef.current;
     let lastMouth = 0;
+    // Viseme set for real lip-sync on ARKit-rigged faces.
+    const VISEMES = [
+      "viseme_aa", "viseme_E", "viseme_I", "viseme_O", "viseme_U",
+      "viseme_FF", "viseme_TH", "viseme_kk", "viseme_SS", "viseme_nn",
+      "viseme_RR", "viseme_PP",
+    ];
 
     const animate = () => {
       const delta = clockRef.current.getDelta();
@@ -628,10 +831,58 @@ export default function Avatar3D({
         if (eyelidR) eyelidR.rotation.x = -pose.blink * 0.5;
       }
 
-      // ---- Fallback facial detail meshes follow the head ----
-      if (facialDetailsRef.current) {
-        facialDetailsRef.current.rotation.y = pose.headYaw * 0.6;
-        facialDetailsRef.current.rotation.x = pose.headPitch * 0.6;
+      // ---- ARKit face rig: real eyelids, brows and expression ----
+      // This is what stops the character reading as a mannequin: real skin
+      // deformation for blinks, plus brows that react with the conversation.
+      const arkFace = !!morph?.has("eyeblinkleft");
+      if (arkFace) {
+        applyMorphTarget("eyeBlinkLeft", pose.blink);
+        applyMorphTarget("eyeBlinkRight", pose.blink);
+
+        // Brows rise with engagement and lower into a frown while thinking.
+        const raise = Math.min(1, 0.1 + pose.attention * 0.22);
+        if (morph?.has("browinnerup")) applyMorphTarget("browInnerUp", raise);
+        if (morph?.has("browouterupleft")) {
+          applyMorphTarget("browOuterUpLeft", pose.attention * 0.14);
+        }
+        if (morph?.has("browouterupright")) {
+          applyMorphTarget("browOuterUpRight", pose.attention * 0.14);
+        }
+        const frown = thinkingRef.current ? 0.2 : 0;
+        if (morph?.has("browdownleft")) applyMorphTarget("browDownLeft", frown);
+        if (morph?.has("browdownright")) {
+          applyMorphTarget("browDownRight", frown);
+        }
+        const squint = thinkingRef.current ? 0.16 : 0;
+        if (morph?.has("eyesquintleft")) applyMorphTarget("eyeSquintLeft", squint);
+        if (morph?.has("eyesquintright")) {
+          applyMorphTarget("eyeSquintRight", squint);
+        }
+      }
+
+      // ---- Eyeballs ----
+      // The generated eyes are parented to the head bone, so they already
+      // inherit head motion. Rotate them for gaze when the rig has no eye
+      // bones, and squash them for blinking when there are no lids/morphs.
+      const eyes = eyeGroupRef.current;
+      if (eyes) {
+        if (!eyeL && !eyeR) {
+          eyes.rotation.y = pose.gazeX * 0.55;
+          eyes.rotation.x = pose.gazeY * 0.45;
+        }
+        const hasBlinkPath =
+          morph?.has("blink") ||
+          morph?.has("eye_blink") ||
+          morph?.has("blink_left") ||
+          bones.get("eyelid_l") ||
+          bones.get("eye_lid_l") ||
+          bones.get("lid_l") ||
+          bones.get("eyelid_r") ||
+          bones.get("eye_lid_r") ||
+          bones.get("lid_r");
+        if (!hasBlinkPath) {
+          eyes.scale.set(1, 1 - pose.blink * 0.88, 1);
+        }
       }
 
       // ---- Hair: secondary motion that lags behind the body ----
@@ -652,23 +903,57 @@ export default function Avatar3D({
       }
 
       // ---- Lip sync ----
-      const jawMorphName = morph?.has("jawopen") ? "jawopen" : "jaw_open";
-      const mouthMorphName = morph?.has("mouthopen")
-        ? "mouthopen"
-        : "mouth_open";
       // Smooth the syllable envelope so the mouth never snaps between bursts.
       lastMouth += (pose.mouth - lastMouth) * Math.min(delta * 16, 0.6);
-      if (morph && morph.has(jawMorphName))
-        applyMorphTarget(jawMorphName, lastMouth * 0.6);
-      if (morph && morph.has(mouthMorphName))
-        applyMorphTarget(mouthMorphName, lastMouth * 0.8);
-      if (morph && morph.has("aa")) applyMorphTarget("aa", lastMouth * 0.4);
-      if (morph && morph.has("ee")) applyMorphTarget("ee", lastMouth * 0.25);
-      if (morph && morph.has("oo")) applyMorphTarget("oo", lastMouth * 0.2);
-      if (morph && morph.has("smi"))
-        applyMorphTarget("smi", lastMouth > 0.15 ? 0.12 : 0.05);
-      if (morph && morph.has("smile"))
-        applyMorphTarget("smile", lastMouth > 0.15 ? 0.12 : 0.05);
+
+      if (arkFace) {
+        // Real rig: step through visemes per syllable, which is how real
+        // lip-sync works, instead of one permanently open mouth.
+        if (speakingRef.current) {
+          const idx = Math.floor(time * 11) % VISEMES.length;
+          const active = VISEMES[idx];
+          const prev = VISEMES[(idx + VISEMES.length - 1) % VISEMES.length];
+          if (morph?.has(active.toLowerCase())) {
+            applyMorphTarget(active, lastMouth);
+          }
+          // The previous viseme decays a little for smoother transitions.
+          if (prev !== active && morph?.has(prev.toLowerCase())) {
+            applyMorphTarget(prev, lastMouth * 0.3);
+          }
+          if (morph?.has("jawopen")) {
+            applyMorphTarget("jawOpen", lastMouth * 0.45);
+          }
+        } else {
+          for (const v of VISEMES) {
+            if (morph?.has(v.toLowerCase())) applyMorphTarget(v, 0);
+          }
+          if (morph?.has("jawopen")) applyMorphTarget("jawOpen", 0);
+          if (morph?.has("mouthsmile")) {
+            applyMorphTarget("mouthSmile", 0.1 + pose.attention * 0.12);
+          }
+        }
+      } else if (morph) {
+        // Legacy lowercase morph names (older Mixamo-style rigs).
+        const jawMorphName = morph.has("jawopen") ? "jawopen" : "jaw_open";
+        const mouthMorphName = morph.has("mouthopen")
+          ? "mouthopen"
+          : "mouth_open";
+        if (morph.has(jawMorphName)) {
+          applyMorphTarget(jawMorphName, lastMouth * 0.6);
+        }
+        if (morph.has(mouthMorphName)) {
+          applyMorphTarget(mouthMorphName, lastMouth * 0.8);
+        }
+        if (morph.has("aa")) applyMorphTarget("aa", lastMouth * 0.4);
+        if (morph.has("ee")) applyMorphTarget("ee", lastMouth * 0.25);
+        if (morph.has("oo")) applyMorphTarget("oo", lastMouth * 0.2);
+        if (morph.has("smi")) {
+          applyMorphTarget("smi", lastMouth > 0.15 ? 0.12 : 0.05);
+        }
+        if (morph.has("smile")) {
+          applyMorphTarget("smile", lastMouth > 0.15 ? 0.12 : 0.05);
+        }
+      }
 
       // Render
       controls.update();
@@ -779,7 +1064,10 @@ export default function Avatar3D({
 
         // âœ… Normalize the humanoid model (scale to 1.7m, center feet on ground)
         const norm = normalizeHumanoidModel(model);
-        addFacialDetails(model, profile);
+        // Realistic skin/cloth response. Authored maps are preserved; only the
+        // CG `metallic: 0.5` and flat colours are corrected.
+        applyRealisticMaterials(model);
+        eyeGroupRef.current = addFacialDetails(model, profile);
 
         // âœ… IMPORTANT: Preserve authored materials - DO NOT overwrite PBR maps
         // The previous code traversed all meshes and replaced roughness/metalness/envMapIntensity,
