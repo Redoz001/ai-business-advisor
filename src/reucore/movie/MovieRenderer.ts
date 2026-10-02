@@ -8,6 +8,7 @@ import type {
   MovieScene,
   MovieShot,
 } from "./types";
+import type { CharacterGender, CharacterStage } from "./CharacterStage";
 
 export type ShotFrame = {
   image: CanvasImageSource;
@@ -23,6 +24,12 @@ export type RenderedShot = {
    * flowing into each other reads as motion.
    */
   frames: ShotFrame[];
+  /**
+   * The real actor for this shot. When present the renderer composites a live
+   * rigged 3D character over the painted background — this is what supplies
+   * genuine continuous motion.
+   */
+  actor?: { gender: CharacterGender; speaking: boolean };
 };
 
 export type RenderSceneInput = {
@@ -30,6 +37,8 @@ export type RenderSceneInput = {
   shots: RenderedShot[];
   fps?: number;
   grain?: boolean;
+  /** Offscreen 3D stage used to render animated characters. */
+  stage?: CharacterStage;
 };
 
 const DEFAULT_FPS = 30;
@@ -149,6 +158,7 @@ export class MovieRenderer {
         seconds,
         fps,
         useGrain,
+        input.stage,
         (t) => {
           onProgress?.(rendered + t * seconds, sceneSeconds);
         }

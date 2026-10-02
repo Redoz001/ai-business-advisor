@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type {
   AvatarProfile,
@@ -1056,6 +1057,12 @@ export default function Avatar3D({
 
     const modelUrl = MODEL_URLS[profile.id] || MODEL_URLS["male-human-1"];
     const loader = new GLTFLoader();
+
+    // The realistic characters ship EXT_meshopt_compression. GLTFLoader refuses
+    // to parse such files unless a decoder is registered first ("setMeshoptDecoder
+    // must be called before loading compressed files"), so wire it up here.
+    // (KHR_mesh_quantization and WebP textures are handled natively by three.)
+    loader.setMeshoptDecoder(MeshoptDecoder);
 
     loader.load(
       modelUrl,
