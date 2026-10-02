@@ -236,30 +236,45 @@ export class CharacterStage {
       }
       return undefined;
     };
+    const bodySway = THREE.MathUtils.clamp(pose.bodySway, -0.4, 0.4);
+    const bodyTwist = THREE.MathUtils.clamp(pose.bodyTwist, -0.6, 0.6);
 
-    // Body
-    rig.root.position.x = pose.bodySway;
+    // Body: keep the torso grounded and stable while still allowing subtle,
+    // believable movement. The waist should not wobble like a loose spring.
+    rig.root.position.x = bodySway * 0.65;
     rig.root.position.y = pose.bodyLift;
-    rig.root.position.z = pose.bodyLean;
-    rig.root.rotation.y = pose.bodyTwist;
-    rig.root.rotation.z = pose.bodySway * 0.35;
+    rig.root.position.z = pose.bodyLean * 0.65;
+    rig.root.rotation.y = THREE.MathUtils.lerp(
+      rig.root.rotation.y,
+      bodyTwist * 0.55,
+      0.14
+    );
+    rig.root.rotation.z = THREE.MathUtils.lerp(
+      rig.root.rotation.z,
+      bodySway * 0.14,
+      0.18
+    );
 
     // Spine + hips
     const spine = get("spine", "mixamorigspine", "spine_01", "chest");
     if (spine) {
       const r = rest(spine);
       if (r) {
-        spine.rotation.x = r.x + pose.breath * 0.7;
-        spine.rotation.z = r.z + pose.bodySway * 0.4;
+        spine.rotation.x = r.x + pose.breath * 0.45;
+        spine.rotation.z = r.z + bodySway * 0.18;
       }
-      spine.position.y = pose.breath * 0.5;
+      spine.position.y = THREE.MathUtils.lerp(
+        spine.position.y,
+        pose.breath * 0.2,
+        0.18
+      );
     }
     const hips = get("hips", "mixamorighips", "pelvis");
     if (hips) {
       const r = rest(hips);
       if (r) {
-        hips.rotation.y = r.y + pose.bodyTwist * 0.8;
-        hips.rotation.z = r.z + pose.bodySway * 0.6;
+        hips.rotation.y = r.y + bodyTwist * 0.35;
+        hips.rotation.z = r.z + bodySway * 0.2;
       }
     }
 
