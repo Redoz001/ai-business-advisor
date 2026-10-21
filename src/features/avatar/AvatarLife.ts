@@ -175,8 +175,8 @@ const IDLE_ACTIONS: IdleAction[] = [
       const e = envelope(t);
       o.bodySway = Math.sin(t * Math.PI) * 0.035 * e;
       o.bodyLean = Math.sin(t * Math.PI * 2) * 0.012 * e;
-      o.armRightZ = -0.02 * e;
-      o.armLeftZ = 0.02 * e;
+      o.armRightZ = -0.08 * e;
+      o.armLeftZ = 0.08 * e;
     },
   },
   {
@@ -199,7 +199,7 @@ const IDLE_ACTIONS: IdleAction[] = [
       o.bodyLift = -0.012 * e;
       o.bodyLean = 0.02 * e;
       o.headPitch = 0.05 * e;
-      o.armLeftZ = -0.05 * e;
+      o.armLeftZ = -0.12 * e;
     },
   },
   {
@@ -209,8 +209,8 @@ const IDLE_ACTIONS: IdleAction[] = [
     apply: (t, o) => {
       const e = envelope(t);
       const w = Math.sin(t * Math.PI * 6);
-      o.armRightZ = -0.045 * e;
-      o.armRightX = 0.03 * e + w * 0.02 * e;
+      o.armRightZ = -0.12 * e;
+      o.armRightX = 0.08 * e + w * 0.04 * e;
       o.headPitch = 0.03 * e;
     },
   },
@@ -220,8 +220,8 @@ const IDLE_ACTIONS: IdleAction[] = [
     weight: 1.5,
     apply: (t, o) => {
       const e = envelope(t);
-      o.armLeftZ = -0.05 * e;
-      o.armRightZ = -0.05 * e;
+      o.armLeftZ = -0.12 * e;
+      o.armRightZ = -0.12 * e;
       o.bodyLift = 0.008 * e;
       o.headRoll = Math.sin(t * Math.PI * 2) * 0.015 * e;
     },
@@ -232,8 +232,8 @@ const IDLE_ACTIONS: IdleAction[] = [
     weight: 1,
     apply: (t, o) => {
       const e = envelope(t);
-      o.armLeftZ = -0.12 * e;
-      o.armRightZ = -0.12 * e;
+      o.armLeftZ = -0.25 * e;
+      o.armRightZ = -0.25 * e;
       o.bodyLean = -0.03 * e;
       o.headPitch = -0.04 * e;
     },
@@ -613,9 +613,9 @@ export class AvatarLife {
       if (time >= this.nextEmphasisAt) this.nextEmphasisAt = time + 2.5 + this.rand() * 3.5;
       const since = time - (this.nextEmphasisAt - 3.5);
       const emphasis = clamp(since, 0, 1.5) * (1 - this.attention * 0.35);
-      armRightZ -= emphasis * 0.12;
-      armLeftZ -= emphasis * 0.05;
-      armRightX += this.fineNoise.fractal(time * 1.1) * 0.03;
+      armRightZ -= emphasis * 0.35;
+      armLeftZ -= emphasis * 0.2;
+      armRightX += this.fineNoise.fractal(time * 1.1) * 0.1;
     }
 
     return {

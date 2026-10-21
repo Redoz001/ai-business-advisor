@@ -96,6 +96,11 @@ export default function AvatarMode({
   const greetedProfileIdRef = useRef<string | null>(null);
   const danceTimeoutRef = useRef<number | null>(null);
   const danceCommandHandledRef = useRef(false);
+  // Track the last text spoken so we never repeat the same utterance and so
+  // the greeting can't stomp on a pending AI response.
+  const lastSpokenRef = useRef<string | null>(null);
+  // Set while an AI response is queued to speak; blocks the greeting effect.
+  const aiResponsePendingRef = useRef(false);
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -247,15 +252,18 @@ export default function AvatarMode({
       utterance.onend = () => {
         setIsSpeaking(false);
         isSpeakingRef.current = false;
+        aiResponsePendingRef.current = false;
         setState("IDLE");
       };
 
       utterance.onerror = () => {
         setIsSpeaking(false);
         isSpeakingRef.current = false;
+        aiResponsePendingRef.current = false;
         setState("IDLE");
       };
 
+      lastSpokenRef.current = text;
       speechSynthRef.current.speak(utterance);
     },
     [profile]
@@ -263,6 +271,8 @@ export default function AvatarMode({
 
   // Greeting when avatar loads
   useEffect(() => {
+    // Never let the greeting stomp on a queued AI response.
+    if (aiResponsePendingRef.current) return;
     if (
       state === "IDLE" &&
       !isSpeaking &&
@@ -271,6 +281,8 @@ export default function AvatarMode({
     ) {
       greetedProfileIdRef.current = profile.id;
       const timer = setTimeout(() => {
+        // Don't greet if we already spoke something (e.g. an AI response arrived).
+        if (lastSpokenRef.current !== null) return;
         speakText(
           `Hello! I'm ${profile.name}. How can I help you today?`
         );
@@ -281,15 +293,23 @@ export default function AvatarMode({
 
   // Speak AI response when it arrives
   useEffect(() => {
-    if (aiResponseText && aiResponseText.trim()) {
-      setState("THINKING");
-      setIsThinking(true);
-      const timer = setTimeout(() => {
-        setIsThinking(false);
-        speakText(aiResponseText);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
+    if (!aiResponseText || !aiResponseText.trim()) return;
+
+    // Don't re-speak the same text.
+    if (lastSpokenRef.current === aiResponseText.trim()) return;
+
+    aiResponsePendingRef.current = true;
+    setState("THINKING");
+    setIsThinking(true);
+    const timer = setTimeout(() => {
+      setIsThinking(false);
+      aiResponsePendingRef.current = false;
+      speakText(aiResponseText);
+    }, 500);
+    return () => {
+      aiResponsePendingRef.current = false;
+      clearTimeout(timer);
+    };
   }, [aiResponseText, speakText]);
 
   // Cleanup on unmount

@@ -731,10 +731,12 @@ export default function Avatar3D({
       if (spineBone) {
         const rest = restOf(spineBone);
         if (rest) {
-          spineBone.rotation.x = rest.x + pose.breath * 0.7;
+          // Breathing: subtle chest expansion (rotation only). Moving spine
+          // position.y stretches the waist unnaturally since the hips stay
+          // fixed, so we avoid vertical position offsets on the spine.
+          spineBone.rotation.x = rest.x + pose.breath * 0.35;
           spineBone.rotation.z = rest.z + pose.bodySway * 0.4;
         }
-        spineBone.position.y = pose.breath * 0.5;
       }
 
       const hipsBone =
@@ -751,9 +753,25 @@ export default function Avatar3D({
 
       // ---- Arms: idle fidget, idle actions, gestures, speaking emphasis ----
       const leftArm =
-        bones.get("mixamorig:leftarm") || bones.get("mixamorigleftarm");
+        bones.get("mixamorig:leftarm") ||
+        bones.get("mixamorigleftarm") ||
+        bones.get("mixamorig:LeftArm") ||
+        bones.get("mixamorigLeftArm") ||
+        bones.get("LeftArm") ||
+        bones.get("leftarm") ||
+        bones.get("leftArm") ||
+        bones.get("left_arm") ||
+        bones.get("arm_l");
       const rightArm =
-        bones.get("mixamorig:rightarm") || bones.get("mixamorigrightarm");
+        bones.get("mixamorig:rightarm") ||
+        bones.get("mixamorigrightarm") ||
+        bones.get("mixamorig:RightArm") ||
+        bones.get("mixamorigRightArm") ||
+        bones.get("RightArm") ||
+        bones.get("rightarm") ||
+        bones.get("rightArm") ||
+        bones.get("right_arm") ||
+        bones.get("arm_r");
       for (const [bone, target] of [
         [leftArm, pose.armLeft],
         [rightArm, pose.armRight],
@@ -767,10 +785,24 @@ export default function Avatar3D({
       }
       const leftShoulder =
         bones.get("mixamorig:leftshoulder") ||
-        bones.get("mixamorigleftshoulder");
+        bones.get("mixamorigleftshoulder") ||
+        bones.get("mixamorig:LeftShoulder") ||
+        bones.get("mixamorigLeftShoulder") ||
+        bones.get("LeftShoulder") ||
+        bones.get("leftshoulder") ||
+        bones.get("leftShoulder") ||
+        bones.get("left_shoulder") ||
+        bones.get("clavicle_l");
       const rightShoulder =
         bones.get("mixamorig:rightshoulder") ||
-        bones.get("mixamorigrightshoulder");
+        bones.get("mixamorigrightshoulder") ||
+        bones.get("mixamorig:RightShoulder") ||
+        bones.get("mixamorigRightShoulder") ||
+        bones.get("RightShoulder") ||
+        bones.get("rightshoulder") ||
+        bones.get("rightShoulder") ||
+        bones.get("right_shoulder") ||
+        bones.get("clavicle_r");
       for (const [bone, target] of [
         [leftShoulder, pose.armLeft],
         [rightShoulder, pose.armRight],

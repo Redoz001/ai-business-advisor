@@ -13,9 +13,22 @@ test("enhanceVisualPrompt adds cinematic, high-quality detail for image requests
   assert.match(result, /cinematic|ultra[- ]?detailed|high[- ]?quality|photorealistic/i);
 });
 
+test("enhanceVisualPrompt handles empty or non-string input safely", () => {
+  assert.match(enhanceVisualPrompt("", "VIDEO"), /video-quality/i);
+  assert.match(enhanceVisualPrompt(null, "video"), /video-quality/i);
+  assert.match(enhanceVisualPrompt(12345, "image"), /12345/i);
+});
+
 test("buildMotionPromptVariants creates multiple motion-aware prompts for video", () => {
   const variants = buildMotionPromptVariants("sunset over the ocean", 4);
 
   assert.equal(variants.length, 4);
   assert.ok(variants.every((variant) => /sunset|ocean|cinematic|motion|dynamic|ambient/i.test(variant)));
+});
+
+test("buildMotionPromptVariants rounds invalid and fractional counts safely", () => {
+  const variants = buildMotionPromptVariants("sunset over the ocean", 3.9);
+
+  assert.equal(variants.length, 3);
+  assert.ok(variants.every((variant) => /sunset|ocean/i.test(variant)));
 });
