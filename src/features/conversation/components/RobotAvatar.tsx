@@ -42,6 +42,14 @@ export default function RobotAvatar({
 
   if (!isActive) return null;
 
+  if (!profile) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black text-sm text-zinc-400">
+        Loading avatar...
+      </div>
+    );
+  }
+
   return (
     <React.Suspense
       fallback={

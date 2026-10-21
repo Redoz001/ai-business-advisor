@@ -59,6 +59,11 @@ export type AvatarPose = {
   /** Extra arm rotation (z = raise/lower, x = swing). */
   armLeft: { z: number; x: number };
   armRight: { z: number; x: number };
+  /** Elbow flex and hand articulation keep the hands relaxed between gestures. */
+  forearmLeft: { x: number };
+  forearmRight: { x: number };
+  handLeft: { z: number };
+  handRight: { z: number };
   /** How engaged the avatar is (drives eye contact and posture). 0..1 */
   attention: number;
   /** Name of the current idle action, for debugging/UI. */
@@ -137,6 +142,10 @@ type IdleOffsets = {
   armRightZ: number;
   armLeftX: number;
   armRightX: number;
+  forearmLeftX: number;
+  forearmRightX: number;
+  handLeftZ: number;
+  handRightZ: number;
 };
 
 const zeroOffsets = (): IdleOffsets => ({
@@ -151,6 +160,10 @@ const zeroOffsets = (): IdleOffsets => ({
   armRightZ: 0,
   armLeftX: 0,
   armRightX: 0,
+  forearmLeftX: 0,
+  forearmRightX: 0,
+  handLeftZ: 0,
+  handRightZ: 0,
 });
 
 type IdleAction = {
@@ -211,6 +224,9 @@ const IDLE_ACTIONS: IdleAction[] = [
       const w = Math.sin(t * Math.PI * 6);
       o.armRightZ = -0.12 * e;
       o.armRightX = 0.08 * e + w * 0.04 * e;
+      o.forearmRightX = 0.32 * e + Math.sin(t * Math.PI * 6) * 0.1 * e;
+      o.forearmLeftX = 0.12 * e;
+      o.handRightZ = Math.sin(t * Math.PI * 8) * 0.12 * e;
       o.headPitch = 0.03 * e;
     },
   },
@@ -222,6 +238,8 @@ const IDLE_ACTIONS: IdleAction[] = [
       const e = envelope(t);
       o.armLeftZ = -0.12 * e;
       o.armRightZ = -0.12 * e;
+      o.forearmLeftX = 0.1 * e;
+      o.forearmRightX = 0.1 * e;
       o.bodyLift = 0.008 * e;
       o.headRoll = Math.sin(t * Math.PI * 2) * 0.015 * e;
     },
@@ -234,6 +252,8 @@ const IDLE_ACTIONS: IdleAction[] = [
       const e = envelope(t);
       o.armLeftZ = -0.25 * e;
       o.armRightZ = -0.25 * e;
+      o.forearmLeftX = 0.18 * e;
+      o.forearmRightX = 0.18 * e;
       o.bodyLean = -0.03 * e;
       o.headPitch = -0.04 * e;
     },
@@ -263,6 +283,16 @@ const GESTURE_DURATION: Partial<Record<Gesture, number>> = {
   dance: 7.0,
 };
 
+const REST_ARM_Z = { left: -0.48, right: 0.48 } as const;
+
+function gestureArmOffset(
+  side: keyof typeof REST_ARM_Z,
+  targetRotation: number,
+  amount: number
+) {
+  return (targetRotation - REST_ARM_Z[side]) * amount;
+}
+
 function applyGesture(
   gesture: Gesture,
   t: number,
@@ -284,51 +314,61 @@ function applyGesture(
       break;
     case "greeting_wave": {
       const wave = Math.sin(t * Math.PI * 7);
-      o.armRightZ = -1.15 * e;
+      o.armRightZ = gestureArmOffset("right", -1.15, e);
       o.armRightX = 0.35 * e + wave * 0.32 * e;
+      o.forearmRightX = 0.2 * e;
+      o.handRightZ = wave * 0.28 * e;
       o.headRoll = -0.05 * e;
       o.bodyTwist = -0.05 * e;
       break;
     }
     case "acknowledgement":
       o.headPitch = Math.sin(t * Math.PI * 2) * 0.07 * e;
-      o.armRightZ = -0.04 * e;
+      o.armRightZ = gestureArmOffset("right", -0.04, e);
       break;
     case "explanatory_hand": {
       const push = Math.sin(t * Math.PI);
-      o.armRightZ = -0.42 * push;
+      o.armRightZ = gestureArmOffset("right", -0.42, push);
       o.armRightX = 0.24 * push;
+      o.forearmRightX = 0.22 * push;
       o.headYaw = -0.05 * e;
       o.bodyTwist = -0.04 * push;
       break;
     }
     case "open_palm":
-      o.armRightZ = -0.55 * e;
+      o.armRightZ = gestureArmOffset("right", -0.55, e);
       o.armRightX = 0.45 * e;
+      o.forearmRightX = 0.24 * e;
       o.headRoll = -0.03 * e;
       break;
     case "subtle_point":
-      o.armRightZ = -0.75 * e;
+      o.armRightZ = gestureArmOffset("right", -0.75, e);
       o.armRightX = 0.12 * e;
+      o.forearmRightX = 0.3 * e;
       o.bodyLean = 0.015 * e;
       break;
     case "shrug":
-      o.armLeftZ = -0.16 * e;
-      o.armRightZ = -0.16 * e;
+      o.armLeftZ = gestureArmOffset("left", -0.16, e);
+      o.armRightZ = gestureArmOffset("right", -0.16, e);
+      o.forearmLeftX = 0.12 * e;
+      o.forearmRightX = 0.12 * e;
       o.headPitch = 0.07 * e;
       o.headRoll = Math.sin(t * Math.PI) * 0.05 * e;
       break;
     case "thinking":
-      o.armRightZ = -0.62 * e;
+      o.armRightZ = gestureArmOffset("right", -0.62, e);
       o.armRightX = 0.85 * e;
+      o.forearmRightX = 0.32 * e;
       o.headRoll = 0.09 * e;
       o.headPitch = -0.05 * e;
       o.bodyLean = -0.02 * e;
       break;
     case "posture_adjust":
       o.bodyLift = -0.018 * e;
-      o.armLeftZ = -0.08 * e;
-      o.armRightZ = -0.08 * e;
+      o.armLeftZ = gestureArmOffset("left", -0.08, e);
+      o.armRightZ = gestureArmOffset("right", -0.08, e);
+      o.forearmLeftX = 0.08 * e;
+      o.forearmRightX = 0.08 * e;
       o.headPitch = 0.06 * e;
       break;
     case "dance": {
@@ -336,10 +376,22 @@ function applyGesture(
       o.bodyLift = Math.abs(Math.sin(d)) * 0.03;
       o.bodyTwist = Math.sin(d * 0.5) * 0.16;
       o.bodyLean = Math.sin(d) * 0.03;
-      o.armLeftZ = -(0.22 + Math.sin(d + 1) * 0.18);
-      o.armRightZ = -(0.22 + Math.sin(d) * 0.18);
+      o.armLeftZ = gestureArmOffset(
+        "left",
+        -(0.22 + Math.sin(d + 1) * 0.18),
+        1
+      );
+      o.armRightZ = gestureArmOffset(
+        "right",
+        -(0.22 + Math.sin(d) * 0.18),
+        1
+      );
       o.armLeftX = Math.sin(d * 0.7) * 0.12;
       o.armRightX = Math.sin(d * 0.7 + 1) * 0.12;
+      o.forearmLeftX = 0.22 + Math.sin(d + 1) * 0.1;
+      o.forearmRightX = 0.22 + Math.sin(d) * 0.1;
+      o.handLeftZ = Math.sin(d * 1.5) * 0.12;
+      o.handRightZ = Math.sin(d * 1.5 + 1) * 0.12;
       o.headRoll = Math.sin(d) * 0.04;
       break;
     }
@@ -604,10 +656,14 @@ export class AvatarLife {
     headRoll += offsets.headRoll;
 
     /* ---------- Speaking emphasis rhythm ---------- */
-    let armLeftZ = offsets.armLeftZ;
-    let armRightZ = offsets.armRightZ;
+    let armLeftZ = REST_ARM_Z.left + offsets.armLeftZ;
+    let armRightZ = REST_ARM_Z.right + offsets.armRightZ;
     let armLeftX = offsets.armLeftX;
     let armRightX = offsets.armRightX;
+    let forearmLeftX = offsets.forearmLeftX;
+    let forearmRightX = offsets.forearmRightX;
+    let handLeftZ = offsets.handLeftZ;
+    let handRightZ = offsets.handRightZ;
     if (ctx.isSpeaking) {
       // Emphasise a phrase every few seconds with a small hand gesture.
       if (time >= this.nextEmphasisAt) this.nextEmphasisAt = time + 2.5 + this.rand() * 3.5;
@@ -616,6 +672,8 @@ export class AvatarLife {
       armRightZ -= emphasis * 0.35;
       armLeftZ -= emphasis * 0.2;
       armRightX += this.fineNoise.fractal(time * 1.1) * 0.1;
+      forearmRightX += this.fineNoise.fractal(time * 0.9 + 20) * 0.16;
+      handRightZ += this.fineNoise.fractal(time * 1.3 + 40) * 0.08;
     }
 
     return {
@@ -633,6 +691,10 @@ export class AvatarLife {
       bodyTwist,
       armLeft: { z: armLeftZ, x: armLeftX },
       armRight: { z: armRightZ, x: armRightX },
+      forearmLeft: { x: forearmLeftX + 0.12 },
+      forearmRight: { x: forearmRightX + 0.12 },
+      handLeft: { z: handLeftZ },
+      handRight: { z: handRightZ },
       attention: this.attention,
       activity,
     };

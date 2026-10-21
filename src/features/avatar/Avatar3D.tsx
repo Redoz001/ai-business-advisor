@@ -37,6 +37,7 @@ const MODEL_URLS: Record<string, string> = {
 
 type Avatar3DProps = {
   profile: AvatarProfile;
+  backgroundColor?: string;
   isMicActive: boolean;
   isSpeaking?: boolean;
   isThinking?: boolean;
@@ -282,9 +283,31 @@ function applyRealisticMaterials(model: THREE.Group): void {
         std.needsUpdate = true;
       }
     }
-
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+  });
+}
+
+function applySkinTone(model: THREE.Group, skinTone: number): void {
+  const tone = new THREE.Color(skinTone);
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+
+    const materials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    for (const material of materials) {
+      const skinMaterial = material as THREE.MeshStandardMaterial;
+      const materialName = skinMaterial.name.toLowerCase();
+      if (
+        (materialName.includes("skin") || materialName === "wolf3d_body") &&
+        skinMaterial.color
+      ) {
+        skinMaterial.color.copy(tone);
+        skinMaterial.needsUpdate = true;
+      }
+    }
   });
 }
 
@@ -419,6 +442,7 @@ function addFacialDetails(
 
 export default function Avatar3D({
   profile,
+  backgroundColor = "#15182d",
   isMicActive,
   isSpeaking = false,
   isThinking = false,
@@ -453,6 +477,8 @@ export default function Avatar3D({
   // Ref mirror of cameraMode so the mount-once resize/refit handler always
   // reads the current framing mode without re-running the effect.
   const cameraModeRef = useRef<CameraMode>("FULL_BODY");
+  const skinToneRef = useRef(profile.skinTone);
+  skinToneRef.current = profile.skinTone;
   const speakingRef = useRef(isSpeaking);
   const thinkingRef = useRef(isThinking);
   const gestureRef = useRef(gesture);
@@ -507,7 +533,7 @@ export default function Avatar3D({
     // Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x15182d);
+    scene.background = new THREE.Color(backgroundColor);
 
     // Camera - start with portrait mode
     const aspect = container.clientWidth / container.clientHeight;
@@ -812,6 +838,44 @@ export default function Avatar3D({
         if (rest) bone.rotation.z = rest.z + target.z * 0.6;
       }
 
+      const leftForearm =
+        bones.get("leftforearm") ||
+        bones.get("mixamorig:leftforearm") ||
+        bones.get("mixamorigleftforearm") ||
+        bones.get("forearm_l");
+      const rightForearm =
+        bones.get("rightforearm") ||
+        bones.get("mixamorig:rightforearm") ||
+        bones.get("mixamorigrightforearm") ||
+        bones.get("forearm_r");
+      for (const [bone, target] of [
+        [leftForearm, pose.forearmLeft],
+        [rightForearm, pose.forearmRight],
+      ] as const) {
+        if (!bone) continue;
+        const rest = restOf(bone);
+        if (rest) bone.rotation.x = rest.x + target.x;
+      }
+
+      const leftHand =
+        bones.get("lefthand") ||
+        bones.get("mixamorig:lefthand") ||
+        bones.get("mixamoriglefthand") ||
+        bones.get("hand_l");
+      const rightHand =
+        bones.get("righthand") ||
+        bones.get("mixamorig:righthand") ||
+        bones.get("mixamorigrighthand") ||
+        bones.get("hand_r");
+      for (const [bone, target] of [
+        [leftHand, pose.handLeft],
+        [rightHand, pose.handRight],
+      ] as const) {
+        if (!bone) continue;
+        const rest = restOf(bone);
+        if (rest) bone.rotation.z = rest.z + target.z;
+      }
+
       // ---- Head: gaze-following plus drift, nods and the thinking tilt ----
       const headBone =
         bones.get("head") ||
@@ -1106,6 +1170,7 @@ export default function Avatar3D({
         // Realistic skin/cloth response. Authored maps are preserved; only the
         // CG `metallic: 0.5` and flat colours are corrected.
         applyRealisticMaterials(model);
+        applySkinTone(model, skinToneRef.current);
         eyeGroupRef.current = addFacialDetails(model, profile);
 
         // âœ… IMPORTANT: Preserve authored materials - DO NOT overwrite PBR maps
@@ -1199,6 +1264,19 @@ export default function Avatar3D({
     // âœ… ONLY depends on profile.id - conversation state does NOT trigger reload
   }, [profile.id]);
 
+  useEffect(() => {
+    if (modelRef.current) applySkinTone(modelRef.current, profile.skinTone);
+  }, [profile.skinTone]);
+
+  useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.background = new THREE.Color(backgroundColor);
+    }
+    if (containerRef.current) {
+      containerRef.current.style.background = `linear-gradient(160deg, ${backgroundColor} 0%, #12122a 100%)`;
+    }
+  }, [backgroundColor]);
+
   // âœ… Toggle between PORTRAIT and FULL_BODY camera framing modes
   const toggleCameraMode = () => {
     const next = cameraMode === "PORTRAIT" ? "FULL_BODY" : "PORTRAIT";
@@ -1219,7 +1297,7 @@ export default function Avatar3D({
         width: "100%",
         height: "min(500px, 85vh)",
         borderRadius: "20px",
-        background: "linear-gradient(160deg, #0a0a1a 0%, #12122a 100%)",
+        background: `linear-gradient(160deg, ${backgroundColor} 0%, #12122a 100%)`,
         boxShadow: "0 30px 60px rgba(0,0,0,0.5)",
         overflow: "hidden",
         position: "relative",

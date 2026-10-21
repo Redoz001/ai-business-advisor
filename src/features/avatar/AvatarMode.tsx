@@ -1,12 +1,34 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Avatar3D from "./Avatar3D";
 import { AVATAR_CATALOG, getDefaultAvatar } from "./catalog";
+import { supabase } from "../../lib/supabase.js";
 import type {
   AvatarProfile,
   AvatarState,
   EmotionState,
   Gesture,
 } from "./types";
+
+const SKIN_TONES = [
+  { name: "Porcelain", value: 0xf2d5c4 },
+  { name: "Light", value: 0xe8b896 },
+  { name: "Warm", value: 0xc98f68 },
+  { name: "Olive", value: 0xa96f4c },
+  { name: "Brown", value: 0x805239 },
+  { name: "Deep", value: 0x503328 },
+];
+
+const BACKGROUNDS = [
+  { name: "Midnight", value: "#15182d" },
+  { name: "Indigo", value: "#312e81" },
+  { name: "Forest", value: "#064e3b" },
+  { name: "Burgundy", value: "#701a35" },
+  { name: "Slate", value: "#334155" },
+];
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
 
 // Error boundary to catch WebGL/renderer failures and show a visible error
 // instead of a black screen.
@@ -70,6 +92,11 @@ export default function AvatarMode({
   const [profile, setProfile] = useState<AvatarProfile>(
     initialProfile || getDefaultAvatar()
   );
+  const [backgroundColor, setBackgroundColor] = useState("#15182d");
+  const [showCustomization, setShowCustomization] = useState(false);
+  const [loadingCustomization, setLoadingCustomization] = useState(true);
+  const [savingCustomization, setSavingCustomization] = useState(false);
+  const [customizationMessage, setCustomizationMessage] = useState("");
   const currentEntry = AVATAR_CATALOG.find(
     (entry) => entry.profile.id === profile.id
   );
@@ -101,6 +128,58 @@ export default function AvatarMode({
   const lastSpokenRef = useRef<string | null>(null);
   // Set while an AI response is queued to speak; blocks the greeting effect.
   const aiResponsePendingRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCustomization = async () => {
+      try {
+        const { data, error: authError } = await supabase.auth.getUser();
+        if (!active) return;
+        if (authError) throw authError;
+
+        const saved = data.user?.user_metadata?.avatar_customization;
+        if (!saved || typeof saved !== "object") {
+          if (initialProfile) setProfile(initialProfile);
+          return;
+        }
+
+        const savedProfile = AVATAR_CATALOG.find(
+          (entry) => entry.profile.id === saved.id
+        )?.profile;
+        const baseProfile = savedProfile || initialProfile || getDefaultAvatar();
+        const savedName =
+          typeof saved.name === "string" ? saved.name.trim().slice(0, 40) : "";
+        const savedSkinTone =
+          typeof saved.skinTone === "number" &&
+          Number.isInteger(saved.skinTone) &&
+          saved.skinTone >= 0 &&
+          saved.skinTone <= 0xffffff
+            ? saved.skinTone
+            : baseProfile.skinTone;
+
+        setProfile({
+          ...baseProfile,
+          name: savedName || baseProfile.name,
+          skinTone: savedSkinTone,
+        });
+        if (isHexColor(saved.backgroundColor)) {
+          setBackgroundColor(saved.backgroundColor);
+        }
+      } catch (authError) {
+        if (!active) return;
+        console.error("Unable to load saved avatar settings:", authError);
+        setCustomizationMessage("Could not load saved avatar settings.");
+      } finally {
+        if (active) setLoadingCustomization(false);
+      }
+    };
+
+    void loadCustomization();
+    return () => {
+      active = false;
+    };
+  }, [initialProfile]);
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -326,11 +405,51 @@ export default function AvatarMode({
 
   const handleSelectAvatar = (newProfile: AvatarProfile) => {
     setProfile(newProfile);
+    setCustomizationMessage("");
     greetedProfileIdRef.current = null;
     setShowCatalog(false);
     speechSynthRef.current?.cancel();
     setIsSpeaking(false);
     setState("IDLE");
+  };
+
+  const saveCustomization = async () => {
+    const name = profile.name.trim();
+    if (!name) {
+      setCustomizationMessage("Enter a name for your avatar before saving.");
+      return;
+    }
+
+    setSavingCustomization(true);
+    setCustomizationMessage("");
+    try {
+      const { data, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!data.user) {
+        setCustomizationMessage("Sign in to save avatar settings to your profile.");
+        return;
+      }
+
+      const { error: saveError } = await supabase.auth.updateUser({
+        data: {
+          avatar_customization: {
+            id: profile.id,
+            name,
+            skinTone: profile.skinTone,
+            backgroundColor,
+          },
+        },
+      });
+      if (saveError) throw saveError;
+
+      setProfile((current) => ({ ...current, name }));
+      setCustomizationMessage("Avatar settings saved to your profile.");
+    } catch (saveError) {
+      console.error("Unable to save avatar settings:", saveError);
+      setCustomizationMessage("Could not save avatar settings. Please try again.");
+    } finally {
+      setSavingCustomization(false);
+    }
   };
 
   return (
@@ -343,6 +462,13 @@ export default function AvatarMode({
             className="rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/20"
           >
             {currentEmoji} {profile.name} ▾
+          </button>
+          <button
+            onClick={() => setShowCustomization((visible) => !visible)}
+            className="rounded-full bg-white/10 px-3 py-2 text-sm text-white transition hover:bg-white/20"
+            aria-expanded={showCustomization}
+          >
+            Customize
           </button>
           <span className="text-xs text-zinc-400">
             {state === "LISTENING"
@@ -367,6 +493,135 @@ export default function AvatarMode({
         <div className="mx-4 mb-2 rounded-lg bg-red-500/20 px-4 py-2 text-sm text-red-300">
           {error}
         </div>
+      )}
+
+      {showCustomization && (
+        <section className="mx-4 mb-3 max-h-[28vh] overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/90 p-3 text-white">
+          <label className="block text-xs text-zinc-300" htmlFor="avatar-name">
+            Avatar name
+          </label>
+          <input
+            id="avatar-name"
+            value={profile.name}
+            maxLength={40}
+            disabled={loadingCustomization}
+            onChange={(event) => {
+              setProfile((current) => ({ ...current, name: event.target.value }));
+              setCustomizationMessage("");
+            }}
+            className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-violet-400"
+          />
+
+          <div className="mt-3">
+            <p className="mb-2 text-xs text-zinc-300">Skin tone</p>
+            <div className="flex flex-wrap gap-2">
+              {SKIN_TONES.map((tone) => (
+                <button
+                  key={tone.value}
+                  type="button"
+                  title={tone.name}
+                  aria-label={`${tone.name} skin tone`}
+                  aria-pressed={profile.skinTone === tone.value}
+                  disabled={loadingCustomization}
+                  onClick={() => {
+                    setProfile((current) => ({
+                      ...current,
+                      skinTone: tone.value,
+                    }));
+                    setCustomizationMessage("");
+                  }}
+                  className={`h-8 w-8 rounded-full border-2 ${
+                    profile.skinTone === tone.value
+                      ? "border-white"
+                      : "border-white/20"
+                  }`}
+                  style={{ backgroundColor: `#${tone.value.toString(16).padStart(6, "0")}` }}
+                />
+              ))}
+              <label className="flex h-8 items-center gap-2 rounded-full border border-white/20 px-2 text-xs text-zinc-300">
+                Custom
+                <input
+                  type="color"
+                  aria-label="Choose custom skin tone"
+                  disabled={loadingCustomization}
+                  value={`#${profile.skinTone.toString(16).padStart(6, "0")}`}
+                  onChange={(event) => {
+                    setProfile((current) => ({
+                      ...current,
+                      skinTone: Number.parseInt(event.target.value.slice(1), 16),
+                    }));
+                    setCustomizationMessage("");
+                  }}
+                  className="h-6 w-6 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <p className="mb-2 text-xs text-zinc-300">Background</p>
+            <div className="flex flex-wrap gap-2">
+              {BACKGROUNDS.map((background) => (
+                <button
+                  key={background.value}
+                  type="button"
+                  title={background.name}
+                  aria-label={`${background.name} background`}
+                  aria-pressed={backgroundColor === background.value}
+                  disabled={loadingCustomization}
+                  onClick={() => {
+                    setBackgroundColor(background.value);
+                    setCustomizationMessage("");
+                  }}
+                  className={`h-8 w-8 rounded-full border-2 ${
+                    backgroundColor === background.value
+                      ? "border-white"
+                      : "border-white/20"
+                  }`}
+                  style={{ backgroundColor: background.value }}
+                />
+              ))}
+              <label className="flex h-8 items-center gap-2 rounded-full border border-white/20 px-2 text-xs text-zinc-300">
+                Custom
+                <input
+                  type="color"
+                  aria-label="Choose custom background"
+                  disabled={loadingCustomization}
+                  value={backgroundColor}
+                  onChange={(event) => {
+                    setBackgroundColor(event.target.value);
+                    setCustomizationMessage("");
+                  }}
+                  className="h-6 w-6 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={saveCustomization}
+              disabled={loadingCustomization || savingCustomization}
+              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
+            >
+              {loadingCustomization
+                ? "Loading..."
+                : savingCustomization
+                ? "Saving..."
+                : "Save avatar to profile"}
+            </button>
+            {loadingCustomization ? (
+              <span className="text-xs text-zinc-300" role="status">
+                Loading saved avatar settings...
+              </span>
+            ) : customizationMessage ? (
+              <span className="text-xs text-zinc-300" role="status">
+                {customizationMessage}
+              </span>
+            ) : null}
+          </div>
+        </section>
       )}
 
       {/* Avatar Catalog */}
@@ -403,6 +658,7 @@ export default function AvatarMode({
         >
           <Avatar3D
             profile={profile}
+            backgroundColor={backgroundColor}
             isMicActive={isMicActive}
             isSpeaking={isSpeaking}
             isThinking={isThinking}
