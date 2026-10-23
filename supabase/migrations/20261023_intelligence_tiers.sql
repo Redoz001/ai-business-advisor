@@ -4,12 +4,12 @@
 
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS intelligence_level text NOT NULL DEFAULT 'basic',
-  ADD COLUMN IF NOT EXISTS requests_limit integer NOT NULL DEFAULT 10;
+  ADD COLUMN IF NOT EXISTS requests_limit integer NOT NULL DEFAULT 30;
 
 UPDATE public.profiles
 SET
   intelligence_level = COALESCE(intelligence_level, 'basic'),
-  requests_limit = COALESCE(requests_limit, 10),
+  requests_limit = COALESCE(requests_limit, 30),
   updated_at = now()
 WHERE intelligence_level IS NULL
    OR requests_limit IS NULL;

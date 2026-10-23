@@ -261,7 +261,7 @@ export async function routeRequest(message: string, context: any) {
     /* =========================
        ðŸŒ WEB SEARCH
     ========================= */
-    if (!isBasic && needsWeb(message)) {
+    if (needsWeb(message)) {
       console.log("ðŸŒ Tavily search triggered");
       try {
         const search = await searchTavily(message);

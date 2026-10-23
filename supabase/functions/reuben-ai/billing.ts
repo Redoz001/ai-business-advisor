@@ -3,8 +3,8 @@ import { supabase } from "./supabase.ts";
 const FREE_MODE_RESET_MS = 30 * 24 * 60 * 60 * 1000;
 
 const TIER_LIMITS: Record<string, { requestsLimit: number; intelligenceLevel: "basic" | "full" }> = {
-  normal: { requestsLimit: 10, intelligenceLevel: "basic" },
-  medium: { requestsLimit: 20, intelligenceLevel: "basic" },
+  normal: { requestsLimit: 30, intelligenceLevel: "basic" },
+  medium: { requestsLimit: 50, intelligenceLevel: "basic" },
   intelligence: { requestsLimit: Number.POSITIVE_INFINITY, intelligenceLevel: "full" },
 };
 
@@ -13,7 +13,7 @@ function defaultAccess() {
     plan: "normal" as const,
     intelligenceLevel: "basic" as const,
     requestsUsed: 0,
-    requestsLimit: 10,
+    requestsLimit: 30,
     isPaid: false,
   };
 }
