@@ -1,12 +1,12 @@
-﻿import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { checkUserLimit, consumeUserRequest, getUserAccessPlan, getIntelligenceLevel } from "./billing.ts";
-import { routeRequest, streamRequest } from "./reuben_engine.ts";
+import { checkUserLimit, consumeUserRequest, getUserAccessPlan, getIntelligenceLevel } from "@/billing.ts";
+import { routeRequest, streamRequest } from "@/reuben_engine.ts";
 import {
   getSessionHistory,
   saveMessage,
-} from "./ai/messages.ts";
+} from "@/ai/messages.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
