@@ -1,13 +1,19 @@
 import { supabase } from "./supabase.ts";
 
-const FREE_MODE_DEFAULT_LIMIT = 20;
 const FREE_MODE_RESET_MS = 30 * 24 * 60 * 60 * 1000;
+
+const TIER_LIMITS: Record<string, { requestsLimit: number; intelligenceLevel: "basic" | "full" }> = {
+  normal: { requestsLimit: 10, intelligenceLevel: "basic" },
+  medium: { requestsLimit: 20, intelligenceLevel: "basic" },
+  intelligence: { requestsLimit: Number.POSITIVE_INFINITY, intelligenceLevel: "full" },
+};
 
 function defaultAccess() {
   return {
     plan: "normal" as const,
+    intelligenceLevel: "basic" as const,
     requestsUsed: 0,
-    requestsLimit: FREE_MODE_DEFAULT_LIMIT,
+    requestsLimit: 10,
     isPaid: false,
   };
 }
@@ -18,10 +24,14 @@ function normalizePlan(value: unknown): "normal" | "medium" | "intelligence" {
   if (plan === "intelligence" || plan === "premium" || plan === "paid") {
     return "intelligence";
   }
-  if (plan === "medium" || plan === "limited" || plan === "free") {
+  if (plan === "medium" || plan === "limited" || plan === "standard") {
     return "medium";
   }
   return "normal";
+}
+
+function getIntelligenceLevel(plan: string): "basic" | "full" {
+  return plan === "intelligence" ? "full" : "basic";
 }
 
 function shouldResetFreeTierUsage(lastResetAt: unknown): boolean {
@@ -38,7 +48,7 @@ async function resetFreeTierUsageIfNeeded(userId: string) {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("requests_used, request_reset_at, plan, subscription_tier, account_tier")
+    .select("requests_used, request_reset_at, plan, subscription_tier, account_tier, intelligence_level")
     .eq("id", userId)
     .maybeSingle();
 
@@ -76,7 +86,7 @@ export async function getUserAccessPlan(userId: string) {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "plan, subscription_tier, account_tier, requests_used, requests_limit, is_premium, subscription_status, stripe_customer_id, request_reset_at",
+        "plan, subscription_tier, account_tier, intelligence_level, requests_used, requests_limit, is_premium, subscription_status, stripe_customer_id, request_reset_at",
       )
       .eq("id", userId)
       .maybeSingle();
@@ -91,13 +101,13 @@ export async function getUserAccessPlan(userId: string) {
     const plan = normalizePlan(
       data?.plan ?? data?.subscription_tier ?? data?.account_tier,
     );
+    const tier = TIER_LIMITS[plan] ?? TIER_LIMITS.normal;
     const requestsUsed = Number(data?.requests_used ?? 0);
     const requestsLimit = Number(
-      data?.requests_limit ??
-        (plan === "normal" || plan === "medium"
-          ? FREE_MODE_DEFAULT_LIMIT
-          : Number.POSITIVE_INFINITY),
+      data?.requests_limit ?? tier.requestsLimit,
     );
+    const intelligenceLevel =
+      data?.intelligence_level ?? getIntelligenceLevel(plan);
     const subscriptionStatus = String(
       data?.subscription_status ?? "",
     ).trim().toLowerCase();
@@ -109,6 +119,7 @@ export async function getUserAccessPlan(userId: string) {
 
     return {
       plan,
+      intelligenceLevel,
       requestsUsed,
       requestsLimit,
       isPaid,
@@ -158,7 +169,7 @@ export async function consumeUserRequest(userId: string): Promise<boolean> {
       .update({
         requests_used: access.requestsUsed + 1,
         request_reset_at: new Date().toISOString(),
-       updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq("id", userId);
 
@@ -173,3 +184,5 @@ export async function consumeUserRequest(userId: string): Promise<boolean> {
     return false;
   }
 }
+
+export { getIntelligenceLevel };

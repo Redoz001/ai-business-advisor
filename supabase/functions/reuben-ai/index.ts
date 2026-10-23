@@ -1,7 +1,7 @@
 ﻿import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { checkUserLimit, consumeUserRequest } from "./billing.ts";
+import { checkUserLimit, consumeUserRequest, getUserAccessPlan, getIntelligenceLevel } from "./billing.ts";
 import { routeRequest, streamRequest } from "./reuben_engine.ts";
 import {
   getSessionHistory,
@@ -31,12 +31,15 @@ serve(async (req) => {
       stream,
     } = await req.json();
 
+    const access = await getUserAccessPlan(userId);
     const canUseService = await checkUserLimit(userId);
     if (!canUseService) {
       return new Response(
         JSON.stringify({
           type: "error",
-          payload: "This account is on the free tier. Upgrade to Intelligence for paid AI access.",
+          payload: access.intelligenceLevel === "full"
+            ? "Your Intelligence subscription is not active. Please resubscribe for full AI access."
+            : "This account is on the free tier with basic AI. Upgrade to Intelligence for full AI access and unlimited requests.",
         }),
         {
           status: 429,
@@ -53,7 +56,9 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           type: "error",
-          payload: "Your free-tier request limit has been reached. Upgrade to Intelligence for more access.",
+          payload: access.intelligenceLevel === "full"
+            ? "Your Intelligence subscription is not active. Please resubscribe for full AI access."
+            : "Your free-tier request limit has been reached. Upgrade to Intelligence for unlimited AI access.",
         }),
         {
           status: 429,
@@ -92,6 +97,7 @@ serve(async (req) => {
               chatId,
               userId,
               sessionHistory,
+              intelligenceLevel: access.intelligenceLevel,
             })) {
               if (!delta) continue;
               full += delta;
@@ -149,6 +155,7 @@ serve(async (req) => {
           chatId,
           userId,
           sessionHistory,
+          intelligenceLevel: access.intelligenceLevel,
         }
       );
 

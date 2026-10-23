@@ -1,4 +1,4 @@
-import { askGroq, askGroqStream } from "./providers/groq.ts";
+﻿import { askGroq, askGroqStream } from "./providers/groq.ts";
 import { askOpenAI } from "./providers/openai.ts";
 import { askOllama } from "./providers/ollama.ts";
 import { searchTavily } from "./providers/tavily.ts";
@@ -15,7 +15,7 @@ import {
 } from "./ai/memory.ts";
 
 /* =========================
-   🌐 WEB DETECTOR
+   ðŸŒ WEB DETECTOR
 ========================= */
 function needsWeb(message: string) {
   const msg = message.toLowerCase().trim();
@@ -39,7 +39,7 @@ function needsWeb(message: string) {
 }
 
 /* =========================
-   🎬 MOVIE DETECTOR
+   ðŸŽ¬ MOVIE DETECTOR
 ========================= */
 function needsMovie(message: string) {
   const msg = message.toLowerCase();
@@ -54,7 +54,7 @@ function needsMovie(message: string) {
 }
 
 /* =========================
-   🎬 VISUAL DETECTOR (IMAGE/VIDEO)
+   ðŸŽ¬ VISUAL DETECTOR (IMAGE/VIDEO)
 ========================= */
 function needsVisual(message: string) {
   const msg = message.toLowerCase();
@@ -74,7 +74,7 @@ function needsVisual(message: string) {
 }
 
 /* =========================
-   🔊 ELEVENLABS DETECTOR
+   ðŸ”Š ELEVENLABS DETECTOR
 ========================= */
 function needsElevenLabs(message: string) {
   const msg = message.toLowerCase();
@@ -89,7 +89,7 @@ function needsElevenLabs(message: string) {
 }
 
 /* =========================
-   🧠 SMART ROUTER
+   ðŸ§  SMART ROUTER
 ========================= */
 async function routeModel(message: string): Promise<"openai" | "groq"> {
   if (Deno.env.get("OPENAI_ENABLED") !== "true") {
@@ -110,7 +110,7 @@ async function routeModel(message: string): Promise<"openai" | "groq"> {
 }
 
 /* =========================
-   🧹 HISTORY SANITIZER
+   ðŸ§¹ HISTORY SANITIZER
 ========================= */
 function sanitizeHistory(history: any[]) {
   if (!Array.isArray(history)) return [];
@@ -123,9 +123,9 @@ function sanitizeHistory(history: any[]) {
 }
 
 /* =========================
-   🧠 CONVERSATION STATE
+   ðŸ§  CONVERSATION STATE
 ========================= */
-function buildConversationState(history: any[], currentMessage: string) {
+function buildConversationState(history: any[], currentMessage: string, systemPrompt?: string) {
   const recentDiscussion = [
     ...history,
     { role: "user", content: currentMessage },
@@ -135,7 +135,7 @@ function buildConversationState(history: any[], currentMessage: string) {
     .join("\n");
   return {
     role: "system",
-    content: `
+  content: systemPrompt ?? `
 CURRENT CONVERSATION CONTEXT
 You are in an ongoing conversation.
 Your responsibilities:
@@ -154,7 +154,7 @@ ${recentDiscussion}
 }
 
 /* =========================
-   🧠 USER FACTS STATE
+   ðŸ§  USER FACTS STATE
 ========================= */
 function buildFactState(history: any[], currentMessage: string) {
   let name = "";
@@ -181,15 +181,21 @@ function isLocalModelEnabled() {
 }
 
 /* =========================
-   ⚡ STREAMING ENGINE
+   âš¡ STREAMING ENGINE
 ========================= */
 // Same history/context/enrichment pipeline as routeRequest, but returns
 // an async generator of speech-ready text chunks. Falls back to the
 // non-streaming engine so output is never lost.
 export async function* streamRequest(message: string, context: any) {
+  const intelligenceLevel = context?.intelligenceLevel ?? "basic";
+  const isBasic = intelligenceLevel === "basic";
   const history = sanitizeHistory(context?.sessionHistory || []);
 
-  const conversationState = buildConversationState(history, message);
+  const systemPrompt = isBasic
+  ? "You are ReuNexus AI (Free Tier). Keep responses short and direct. Answer in 2-4 sentences maximum."
+  : "You are ReuNexus AI (Intelligence Tier). Provide detailed, thoughtful, and comprehensive responses.";
+
+  const conversationState = buildConversationState(history, message, systemPrompt);
   const factState = buildFactState(history, message);
   const contextMessages = [conversationState, factState, ...history];
 
@@ -202,20 +208,20 @@ export async function* streamRequest(message: string, context: any) {
       : await routeModel(message);
 
     if (model === "local") {
-      console.log("⚡ Ollama local brain (streamed)");
+      console.log("âš¡ Ollama local brain (streamed)");
       const answer = await askOllama(message, contextMessages);
       yield answer;
       return;
     }
 
     if (model === "openai") {
-      console.log("⚡ OpenAI Brain (streamed via non-stream as safe fallback)");
+      console.log("âš¡ OpenAI Brain (streamed via non-stream as safe fallback)");
       const answer = await askOpenAI(message, contextMessages);
       yield answer;
       return;
     }
 
-    console.log("⚡ Groq Brain (streamed)");
+    console.log("âš¡ Groq Brain (streamed)");
     try {
       for await (const delta of askGroqStream(message, contextMessages)) {
         yield delta;
@@ -233,13 +239,19 @@ export async function* streamRequest(message: string, context: any) {
 }
 
 /* =========================
-   🚀 MAIN ENGINE
+   ðŸš€ MAIN ENGINE
 ========================= */
 export async function routeRequest(message: string, context: any) {
+  const intelligenceLevel = context?.intelligenceLevel ?? 'basic';
+  const isBasic = intelligenceLevel === 'basic';
   const history = sanitizeHistory(context?.sessionHistory || []);
   console.log("SESSION HISTORY:", JSON.stringify(context?.sessionHistory, null, 2));
 
-  const conversationState = buildConversationState(history, message);
+  const systemPrompt = isBasic
+  ? "You are ReuNexus AI (Free Tier). Keep responses short and direct. Answer in 2-4 sentences maximum."
+  : "You are ReuNexus AI (Intelligence Tier). Provide detailed, thoughtful, and comprehensive responses.";
+
+  const conversationState = buildConversationState(history, message, systemPrompt);
   const factState = buildFactState(history, message);
   const contextMessages = [conversationState, factState, ...history];
 
@@ -247,10 +259,10 @@ export async function routeRequest(message: string, context: any) {
 
   try {
     /* =========================
-       🌐 WEB SEARCH
+       ðŸŒ WEB SEARCH
     ========================= */
-    if (needsWeb(message)) {
-      console.log("🌐 Tavily search triggered");
+    if (!isBasic && needsWeb(message)) {
+      console.log("ðŸŒ Tavily search triggered");
       try {
         const search = await searchTavily(message);
         webContext =
@@ -287,10 +299,10 @@ ${message}
       : message;
 
     /* =========================
-       🎬 VISUAL GENERATION (IMAGE/VIDEO)
+       ðŸŽ¬ VISUAL GENERATION (IMAGE/VIDEO)
     ========================= */
     if (needsMovie(message)) {
-      console.log("🎬 Movie intent detected — writing screenplay");
+      console.log("ðŸŽ¬ Movie intent detected â€” writing screenplay");
 
       try {
         const { writeScreenplay } = await import("./ai/screenwriter.ts");
@@ -299,10 +311,10 @@ ${message}
           shotsPerScene: 5,
         });
 
-        console.log("✅ Screenplay written:", manifest.title, "-", manifest.runtimeSeconds, "seconds");
+        console.log("âœ… Screenplay written:", manifest.title, "-", manifest.runtimeSeconds, "seconds");
         return {
           type: "movie",
-          content: `🎬 "${manifest.title}" — ${manifest.tagline}`,
+          content: `ðŸŽ¬ "${manifest.title}" â€” ${manifest.tagline}`,
           movie: {
             manifest,
             status: "ready",
@@ -311,25 +323,25 @@ ${message}
           mode: "screenwriter",
         };
       } catch (screenwriteErr: any) {
-        console.error("❌ Screenplay failed:", screenwriteErr.message);
+        console.error("âŒ Screenplay failed:", screenwriteErr.message);
         // Fall back to normal visual generation so the user still gets something.
-        console.log("🎬 Screenwriter failed — degrading to visual fallback.");
+        console.log("ðŸŽ¬ Screenwriter failed â€” degrading to visual fallback.");
       }
     }
 
     if (needsVisual(message)) {
-      console.log("🎬 Visual generation triggered");
+      console.log("ðŸŽ¬ Visual generation triggered");
 
-      // --- 0. Video/animation intent → free Pollinations animated GIF ---
+      // --- 0. Video/animation intent â†’ free Pollinations animated GIF ---
       const isVideo = /video|clip|animate|animation|moving/i.test(message);
       if (isVideo) {
-        console.log("🎬 Video request detected — generating animated GIF (Pollinations)");
+        console.log("ðŸŽ¬ Video request detected â€” generating animated GIF (Pollinations)");
         try {
           const { generateGif } = await import("./providers/runway.ts");
           const gifUrl = await generateGif(message);
 
-          console.log("✅ Animated GIF generated:", gifUrl.slice(0, 40), "len:", gifUrl.length);
-          // ⭐ Content is a `data:image/gif;base64,...` URL that the frontend
+          console.log("âœ… Animated GIF generated:", gifUrl.slice(0, 40), "len:", gifUrl.length);
+          // â­ Content is a `data:image/gif;base64,...` URL that the frontend
           //   renders in an <img> tag, which auto-plays the animation.
           return {
             type: "image",
@@ -343,7 +355,7 @@ ${message}
             mode: "pollinations-gif",
           };
         } catch (gifErr: any) {
-          console.error("❌ GIF generation failed:", gifErr.message);
+          console.error("âŒ GIF generation failed:", gifErr.message);
           return {
             type: "text",
             payload: "Video generation failed. Please try again later.",
@@ -371,20 +383,20 @@ ${message}
           };
         }
       } catch (openAiError) {
-        console.warn("⚠️ OpenAI image generation unavailable, falling back:", openAiError);
+        console.warn("âš ï¸ OpenAI image generation unavailable, falling back:", openAiError);
       }
 
       // --- 2. Try local ReuCore first ---
       try {
-        console.log("🔄 Attempting local ReuCore generation...");
+        console.log("ðŸ”„ Attempting local ReuCore generation...");
         const localResult = await generateLocalImage({
           prompt: message,
           aspectRatio: "default",
         });
 
         if (localResult && localResult.startsWith("data:image/")) {
-          console.log("✅ ReuCore generated SVG successfully");
-          // ⭐ FRONTEND EXPECTS: image: { svg, prompt, width, height }
+          console.log("âœ… ReuCore generated SVG successfully");
+          // â­ FRONTEND EXPECTS: image: { svg, prompt, width, height }
           return {
             type: "image",
             content: message,
@@ -401,11 +413,11 @@ ${message}
           throw new Error("ReuCore returned invalid result");
         }
       } catch (localErr: any) {
-        console.warn("⚠️ ReuCore failed, falling back to Runway:", localErr.message);
+        console.warn("âš ï¸ ReuCore failed, falling back to Runway:", localErr.message);
 
         // --- 3. Fallback to Runway ---
         try {
-          console.log("🔄 Trying Runway as fallback...");
+          console.log("ðŸ”„ Trying Runway as fallback...");
           const imageResult = await generateImage(message);
 
           const finalUrl = imageResult;
@@ -414,8 +426,8 @@ ${message}
             throw new Error("No valid image URL extracted from Runway");
           }
 
-          console.log("✅ Runway generation succeeded");
-          // ⭐ FRONTEND EXPECTS: image: { url, prompt }
+          console.log("âœ… Runway generation succeeded");
+          // â­ FRONTEND EXPECTS: image: { url, prompt }
           return {
             type: "image",
             content: message,
@@ -427,7 +439,7 @@ ${message}
             mode: "runway",
           };
         } catch (runwayErr: any) {
-          console.error("❌ Runway also failed:", runwayErr.message);
+          console.error("âŒ Runway also failed:", runwayErr.message);
           return {
             type: "text",
             payload: "Image generation failed. Please try again later.",
@@ -439,10 +451,10 @@ ${message}
     }
 
     /* =========================
-       🔊 ELEVENLABS
+       ðŸ”Š ELEVENLABS
     ========================= */
     if (needsElevenLabs(message)) {
-      console.log("🔊 ElevenLabs triggered");
+      console.log("ðŸ”Š ElevenLabs triggered");
       try {
         const audioUrl = await generateSpeech(message);
         return {
@@ -463,7 +475,7 @@ ${message}
     }
 
     /* =========================
-       🧠 SMART MODEL ROUTING
+       ðŸ§  SMART MODEL ROUTING
     ========================= */
     const model = isLocalModelEnabled()
       ? "local"
@@ -474,10 +486,10 @@ ${message}
         console.log("Ollama local brain");
         result = await askOllama(enrichedMessage, contextMessages);
       } else if (model === "openai") {
-        console.log("🧠 OpenAI Brain");
+        console.log("ðŸ§  OpenAI Brain");
         result = await askOpenAI(enrichedMessage, contextMessages);
       } else {
-        console.log("⚡ Groq Brain");
+        console.log("âš¡ Groq Brain");
         result = await askGroq(enrichedMessage, contextMessages);
       }
     } catch (err) {
@@ -502,3 +514,7 @@ ${message}
     };
   }
 }
+
+
+
+

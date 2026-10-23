@@ -41,22 +41,24 @@ export async function saveFeedback({
     id = data.id;
   }
 
+  // Notification email is fire-and-forget: feedback is already saved.
+  // Never let a notification failure surface as a user-facing error.
   try {
     const { error } = await supabase.functions.invoke("feedback-notification", {
       body: { feedbackId: id },
     });
 
-    if (error) throw error;
+    if (error) {
+      console.warn(
+        "Feedback notification failed (feedback was still saved):",
+        error,
+      );
+    }
   } catch (notificationError) {
-    const errorWithId = new Error(
-      `Feedback was saved, but the notification email could not be sent: ${
-        notificationError instanceof Error
-          ? notificationError.message
-          : "Unexpected error"
-      }`,
+    console.warn(
+      "Feedback notification threw (feedback was still saved):",
+      notificationError,
     );
-    errorWithId.feedbackId = id;
-    throw errorWithId;
   }
 
   return id;
