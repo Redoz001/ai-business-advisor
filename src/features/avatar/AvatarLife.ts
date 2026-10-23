@@ -59,6 +59,9 @@ export type AvatarPose = {
   /** Extra arm rotation (z = raise/lower, x = swing). */
   armLeft: { z: number; x: number };
   armRight: { z: number; x: number };
+  /** Small clavicle movement separate from the upper-arm rest pose. */
+  shoulderLeft: { z: number };
+  shoulderRight: { z: number };
   /** Elbow flex and hand articulation keep the hands relaxed between gestures. */
   forearmLeft: { x: number };
   forearmRight: { x: number };
@@ -691,6 +694,8 @@ export class AvatarLife {
       bodyTwist,
       armLeft: { z: armLeftZ, x: armLeftX },
       armRight: { z: armRightZ, x: armRightX },
+      shoulderLeft: { z: (armLeftZ - REST_ARM_Z.left) * 0.12 },
+      shoulderRight: { z: (armRightZ - REST_ARM_Z.right) * 0.12 },
       forearmLeft: { x: forearmLeftX + 0.12 },
       forearmRight: { x: forearmRightX + 0.12 },
       handLeft: { z: handLeftZ },

@@ -38,6 +38,9 @@ const MODEL_URLS: Record<string, string> = {
 type Avatar3DProps = {
   profile: AvatarProfile;
   backgroundColor?: string;
+  arOverlayRoot?: HTMLElement | null;
+  arPanelContent?: ARPanelContent;
+  onARModeChange?: (active: boolean) => void;
   isMicActive: boolean;
   isSpeaking?: boolean;
   isThinking?: boolean;
@@ -52,6 +55,98 @@ type Avatar3DProps = {
 
 // Camera framing modes
 type CameraMode = "FULL_BODY" | "PORTRAIT";
+type ARPanelContent = {
+  userMessage: string;
+  draft: string;
+  response: string;
+  status: AvatarState;
+};
+
+function drawWrappedText(
+  context: CanvasRenderingContext2D,
+  value: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines: number
+) {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (context.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines) break;
+    } else {
+      line = candidate;
+    }
+  }
+
+  if (line && lines.length < maxLines) lines.push(line);
+  lines.forEach((text, index) => context.fillText(text, x, y + index * lineHeight));
+}
+
+function drawARPanel(canvas: HTMLCanvasElement, content: ARPanelContent) {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  const width = canvas.width;
+  const padding = 56;
+  context.clearRect(0, 0, width, canvas.height);
+  context.fillStyle = "rgba(8, 14, 22, 0.9)";
+  context.strokeStyle = "rgba(190, 220, 255, 0.5)";
+  context.lineWidth = 4;
+  context.beginPath();
+  context.roundRect(12, 12, width - 24, canvas.height - 24, 42);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = "#78f0c0";
+  context.font = "600 30px sans-serif";
+  context.fillText("REUBEN AI  ·  LIVE", padding, 82);
+  context.fillStyle = "#e8edf4";
+  context.font = "600 48px sans-serif";
+  context.fillText(content.status.replaceAll("_", " "), padding, 148);
+  context.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  context.beginPath();
+  context.moveTo(padding, 190);
+  context.lineTo(width - padding, 190);
+  context.stroke();
+
+  context.fillStyle = "#a7b2c2";
+  context.font = "600 28px sans-serif";
+  context.fillText("YOU", padding, 242);
+  context.fillStyle = "#ffffff";
+  context.font = "32px sans-serif";
+  drawWrappedText(
+    context,
+    (content.draft || content.userMessage || "Type a message to begin.").slice(0, 240),
+    padding,
+    292,
+    width - padding * 2,
+    42,
+    5
+  );
+
+  context.fillStyle = "#78f0c0";
+  context.font = "600 28px sans-serif";
+  context.fillText("REUBEN", padding, 560);
+  context.fillStyle = "#e8edf4";
+  context.font = "32px sans-serif";
+  drawWrappedText(
+    context,
+    (content.response || "Your reply will appear here.").slice(0, 420),
+    padding,
+    610,
+    width - padding * 2,
+    42,
+    8
+  );
+}
 
 // Model lifecycle status - only transitions on actual avatar change
 type ModelStatus = "idle" | "loading" | "ready" | "error";
@@ -311,6 +406,115 @@ function applySkinTone(model: THREE.Group, skinTone: number): void {
   });
 }
 
+function applyAvatarHairStyle(
+  model: THREE.Group,
+  hairStyle: AvatarProfile["hairStyle"],
+  hairColor: number
+): void {
+  const head =
+    model.getObjectByName("mixamorig:Head") ??
+    model.getObjectByName("Head") ??
+    model.getObjectByName("head");
+  if (!head) return;
+
+  model.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    const isHair =
+      mesh.name.toLowerCase().includes("hair") ||
+      materials.some((material) => material.name.toLowerCase().includes("hair"));
+    if (!isHair) return;
+
+    const originalVisible = mesh.userData.avatarHairOriginalVisible;
+    if (typeof originalVisible !== "boolean") {
+      mesh.userData.avatarHairOriginalVisible = mesh.visible;
+    }
+    mesh.visible =
+      hairStyle === "bald" ? false : mesh.userData.avatarHairOriginalVisible;
+  });
+
+  const previousStyle = head.getObjectByName("avatar-hairstyle");
+  if (previousStyle) {
+    head.remove(previousStyle);
+    previousStyle.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.isMesh) mesh.geometry.dispose();
+      if (mesh.isMesh) {
+        const materials = Array.isArray(mesh.material)
+          ? mesh.material
+          : [mesh.material];
+        materials.forEach((material) => material.dispose());
+      }
+    });
+  }
+
+  if (hairStyle === "short" || hairStyle === "bald") return;
+
+  const headPosition = new THREE.Vector3();
+  head.getWorldPosition(headPosition);
+  const hair = new THREE.Group();
+  hair.name = "avatar-hairstyle";
+  head.add(hair);
+  hair.updateWorldMatrix(true, false);
+  const toLocal = (x: number, y: number, z: number) =>
+    hair.worldToLocal(
+      new THREE.Vector3(
+        headPosition.x + x,
+        headPosition.y + y,
+        headPosition.z + z
+      )
+    );
+  const material = new THREE.MeshStandardMaterial({
+    color: hairColor,
+    roughness: 0.78,
+    metalness: 0,
+  });
+  const addSphere = (
+    position: [number, number, number],
+    scale: [number, number, number]
+  ) => {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), material);
+    mesh.position.copy(toLocal(...position));
+    mesh.scale.set(...scale);
+    mesh.castShadow = true;
+    hair.add(mesh);
+  };
+
+  if (hairStyle === "long") {
+    addSphere([0, 0.07, -0.015], [0.17, 0.16, 0.15]);
+    addSphere([0, -0.05, -0.07], [0.19, 0.25, 0.13]);
+    addSphere([-0.13, -0.035, 0.005], [0.055, 0.2, 0.065]);
+    addSphere([0.13, -0.035, 0.005], [0.055, 0.2, 0.065]);
+  } else if (hairStyle === "bun") {
+    addSphere([0, 0.07, -0.015], [0.17, 0.16, 0.15]);
+    addSphere([0, 0.14, -0.105], [0.085, 0.075, 0.08]);
+  } else if (hairStyle === "spiky") {
+    addSphere([0, 0.07, -0.015], [0.17, 0.16, 0.15]);
+    for (let i = 0; i < 7; i += 1) {
+      const angle = (i / 7) * Math.PI * 2;
+      const spike = new THREE.Mesh(
+        new THREE.ConeGeometry(0.035, 0.13, 8),
+        material
+      );
+      spike.position.copy(
+        toLocal(
+          Math.cos(angle) * 0.085,
+          0.12 + (i % 2) * 0.025,
+          Math.sin(angle) * 0.045 - 0.015
+        )
+      );
+      spike.rotation.z = -Math.cos(angle) * 0.45;
+      spike.rotation.x = Math.sin(angle) * 0.35;
+      spike.castShadow = true;
+      hair.add(spike);
+    }
+  }
+
+}
+
 /**
  * Adds eyes (and a hair cap) that read as a face. The shipped models have no
  * eyeball geometry, so they are built at real human proportions and PARENTED
@@ -344,20 +548,6 @@ function addFacialDetails(
   // a bald cap over real hair, so detect those cases and skip.
   const hasEyeBones =
     !!model.getObjectByName("LeftEye") || !!model.getObjectByName("RightEye");
-  let hasHair = false;
-  model.traverse((child) => {
-    const mesh = child as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if ((mesh.name ?? "").toLowerCase().includes("hair")) {
-      hasHair = true;
-      return;
-    }
-    if (mats.some((m) => (m?.name ?? "").toLowerCase().includes("hair"))) {
-      hasHair = true;
-    }
-  });
-
   let eyes: THREE.Group | null = null;
 
   if (!hasEyeBones) {
@@ -412,37 +602,15 @@ function addFacialDetails(
     }
   }
 
-  if (!hasHair) {
-    const hairMat = new THREE.MeshStandardMaterial({
-      color: profile.hairColor,
-      roughness: 0.72,
-      metalness: 0,
-      envMapIntensity: 0.7,
-    });
-
-    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hairMat);
-    hairCap.scale.set(0.17, 0.16, 0.15);
-    hairCap.position.copy(
-      toLocal(headPosition.x, headPosition.y + 0.07, headPosition.z - 0.015)
-    );
-    details.add(hairCap);
-
-    if (profile.hairStyle === "long") {
-      const hairBack = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), hairMat);
-      hairBack.scale.set(0.19, 0.25, 0.13);
-      hairBack.position.copy(
-        toLocal(headPosition.x, headPosition.y - 0.05, headPosition.z - 0.07)
-      );
-      details.add(hairBack);
-    }
-  }
-
   return eyes;
 }
 
 export default function Avatar3D({
   profile,
   backgroundColor = "#15182d",
+  arOverlayRoot,
+  arPanelContent = { userMessage: "", draft: "", response: "", status: "IDLE" },
+  onARModeChange,
   isMicActive,
   isSpeaking = false,
   isThinking = false,
@@ -460,6 +628,15 @@ export default function Avatar3D({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const modelRef = useRef<THREE.Group | null>(null);
+  const avatarAnchorRef = useRef<THREE.Group | null>(null);
+  const arPanelRef = useRef<THREE.Mesh | null>(null);
+  const arPanelCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const arPanelTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const placementReticleRef = useRef<THREE.Mesh | null>(null);
+  const hitTestSourceRef = useRef<XRHitTestSource | null>(null);
+  const xrSessionRef = useRef<XRSession | null>(null);
+  const placementAvailableRef = useRef(false);
+  const arEnvironmentObjectsRef = useRef<THREE.Object3D[]>([]);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const clockRef = useRef<THREE.Clock>(new THREE.Clock());
   const animIdRef = useRef<number>(0);
@@ -474,11 +651,18 @@ export default function Avatar3D({
   const [modelStatus, setModelStatus] = useState<ModelStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("FULL_BODY");
+  const [isARMode, setIsARMode] = useState(false);
+  const [canPlaceAvatar, setCanPlaceAvatar] = useState(false);
+  const [arMessage, setARMessage] = useState("");
   // Ref mirror of cameraMode so the mount-once resize/refit handler always
   // reads the current framing mode without re-running the effect.
   const cameraModeRef = useRef<CameraMode>("FULL_BODY");
   const skinToneRef = useRef(profile.skinTone);
   skinToneRef.current = profile.skinTone;
+  const hairStyleRef = useRef(profile.hairStyle);
+  hairStyleRef.current = profile.hairStyle;
+  const hairColorRef = useRef(profile.hairColor);
+  hairColorRef.current = profile.hairColor;
   const speakingRef = useRef(isSpeaking);
   const thinkingRef = useRef(isThinking);
   const gestureRef = useRef(gesture);
@@ -534,6 +718,40 @@ export default function Avatar3D({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     scene.background = new THREE.Color(backgroundColor);
+    const avatarAnchor = new THREE.Group();
+    avatarAnchor.name = "avatar-spatial-anchor";
+    scene.add(avatarAnchor);
+    avatarAnchorRef.current = avatarAnchor;
+    const arPanelCanvas = document.createElement("canvas");
+    arPanelCanvas.width = 1024;
+    arPanelCanvas.height = 1024;
+    arPanelCanvasRef.current = arPanelCanvas;
+    const arPanelTexture = new THREE.CanvasTexture(arPanelCanvas);
+    arPanelTexture.colorSpace = THREE.SRGBColorSpace;
+    arPanelTextureRef.current = arPanelTexture;
+    const arPanel = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.85, 1.05),
+      new THREE.MeshBasicMaterial({
+        map: arPanelTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+      })
+    );
+    arPanel.name = "ar-conversation-panel";
+    arPanel.position.set(-0.82, 1.2, 0.04);
+    arPanel.visible = false;
+    avatarAnchor.add(arPanel);
+    arPanelRef.current = arPanel;
+    const reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.12, 0.15, 32),
+      new THREE.MeshBasicMaterial({ color: 0x8b5cf6, side: THREE.DoubleSide })
+    );
+    reticle.name = "ar-placement-reticle";
+    reticle.rotation.x = -Math.PI / 2;
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
+    placementReticleRef.current = reticle;
 
     // Camera - start with portrait mode
     const aspect = container.clientWidth / container.clientHeight;
@@ -548,6 +766,8 @@ export default function Avatar3D({
       alpha: true,
       powerPreference: "high-performance",
     });
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType("local-floor");
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -597,6 +817,7 @@ export default function Avatar3D({
     ground.position.y = -0.01;
     ground.receiveShadow = true;
     scene.add(ground);
+    arEnvironmentObjectsRef.current = [ground];
 
     // ===== REALISM: image-based studio environment =====
     // A small procedural room (soft key panel, cool bounce, warm rim) is
@@ -681,6 +902,7 @@ export default function Avatar3D({
       contact.position.y = 0.002;
       contact.renderOrder = -1;
       scene.add(contact);
+      arEnvironmentObjectsRef.current.push(contact);
     }
 
     // Controls (constrained orbit) - start portrait mode
@@ -712,9 +934,26 @@ export default function Avatar3D({
       "viseme_RR", "viseme_PP",
     ];
 
-    const animate = () => {
+    const animate = (_time?: number, frame?: XRFrame) => {
       const delta = clockRef.current.getDelta();
       const time = clockRef.current.getElapsedTime();
+
+      const xrReferenceSpace = renderer.xr.getReferenceSpace();
+      if (frame && hitTestSourceRef.current && xrReferenceSpace) {
+        const hit = frame.getHitTestResults(hitTestSourceRef.current)[0];
+        const hitPose = hit?.getPose(xrReferenceSpace);
+        const reticle = placementReticleRef.current;
+        if (hitPose && reticle) {
+          reticle.matrix.fromArray(hitPose.transform.matrix);
+          reticle.visible = !avatarAnchorRef.current?.userData.placed;
+          placementAvailableRef.current = reticle.visible;
+          setCanPlaceAvatar(reticle.visible);
+        } else {
+          if (reticle) reticle.visible = false;
+          placementAvailableRef.current = false;
+          setCanPlaceAvatar(false);
+        }
+      }
 
       // Update animation mixer
       if (mixerRef.current) {
@@ -830,12 +1069,12 @@ export default function Avatar3D({
         bones.get("right_shoulder") ||
         bones.get("clavicle_r");
       for (const [bone, target] of [
-        [leftShoulder, pose.armLeft],
-        [rightShoulder, pose.armRight],
+        [leftShoulder, pose.shoulderLeft],
+        [rightShoulder, pose.shoulderRight],
       ] as const) {
         if (!bone) continue;
         const rest = restOf(bone);
-        if (rest) bone.rotation.z = rest.z + target.z * 0.6;
+        if (rest) bone.rotation.z = rest.z + target.z;
       }
 
       const leftForearm =
@@ -1053,12 +1292,11 @@ export default function Avatar3D({
       }
 
       // Render
-      controls.update();
+      if (!renderer.xr.isPresenting) controls.update();
       renderer.render(scene, camera);
-      animIdRef.current = requestAnimationFrame(animate);
     };
 
-    animIdRef.current = requestAnimationFrame(animate);
+    renderer.setAnimationLoop(animate);
 
     // âœ… Resize handler - update camera/renderer AND refit framing when the
     // aspect changes significantly (e.g. orientation change on a phone) so the
@@ -1108,7 +1346,8 @@ export default function Avatar3D({
     return () => {
       window.removeEventListener("resize", onResize);
       container.removeEventListener("click", onClick);
-      cancelAnimationFrame(animIdRef.current);
+      renderer.setAnimationLoop(null);
+      xrSessionRef.current?.end();
       controls.dispose();
       scene.clear();
       renderer.dispose();
@@ -1117,6 +1356,14 @@ export default function Avatar3D({
       cameraRef.current = null;
       controlsRef.current = null;
       modelRef.current = null;
+      avatarAnchorRef.current = null;
+      arPanelRef.current = null;
+      arPanelTexture.dispose();
+      arPanelTextureRef.current = null;
+      arPanelCanvasRef.current = null;
+      placementReticleRef.current = null;
+      hitTestSourceRef.current = null;
+      xrSessionRef.current = null;
       mixerRef.current = null;
       bonesRef.current.clear();
       morphRef.current.clear();
@@ -1126,6 +1373,14 @@ export default function Avatar3D({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // âœ… EMPTY DEPS - scene setup runs ONCE, never on state changes
+
+  useEffect(() => {
+    const canvas = arPanelCanvasRef.current;
+    const texture = arPanelTextureRef.current;
+    if (!canvas || !texture) return;
+    drawARPanel(canvas, arPanelContent);
+    texture.needsUpdate = true;
+  }, [arPanelContent]);
 
   // ============================================================
   // MODEL LOADING - runs ONLY when profile.id changes.
@@ -1171,6 +1426,11 @@ export default function Avatar3D({
         // CG `metallic: 0.5` and flat colours are corrected.
         applyRealisticMaterials(model);
         applySkinTone(model, skinToneRef.current);
+        applyAvatarHairStyle(
+          model,
+          hairStyleRef.current,
+          hairColorRef.current
+        );
         eyeGroupRef.current = addFacialDetails(model, profile);
 
         // âœ… IMPORTANT: Preserve authored materials - DO NOT overwrite PBR maps
@@ -1178,7 +1438,7 @@ export default function Avatar3D({
         // which discards the model's original PBR maps and texture maps.
         // We only ensure shadows and basic properties if needed, but skip the full overwrite.
 
-        sceneRef.current?.add(model);
+        avatarAnchorRef.current?.add(model);
         modelRef.current = model;
 
         // âœ… Map skeleton bones (after normalization so bone names are consistent)
@@ -1269,13 +1529,162 @@ export default function Avatar3D({
   }, [profile.skinTone]);
 
   useEffect(() => {
+    if (modelRef.current) {
+      applyAvatarHairStyle(modelRef.current, profile.hairStyle, profile.hairColor);
+    }
+  }, [profile.hairStyle, profile.hairColor]);
+
+  useEffect(() => {
     if (sceneRef.current) {
-      sceneRef.current.background = new THREE.Color(backgroundColor);
+      sceneRef.current.background = isARMode
+        ? null
+        : new THREE.Color(backgroundColor);
     }
     if (containerRef.current) {
-      containerRef.current.style.background = `linear-gradient(160deg, ${backgroundColor} 0%, #12122a 100%)`;
+      containerRef.current.style.background = isARMode
+        ? "transparent"
+        : `linear-gradient(160deg, ${backgroundColor} 0%, #12122a 100%)`;
     }
-  }, [backgroundColor]);
+  }, [backgroundColor, isARMode]);
+
+  const placeHologram = useCallback(() => {
+    const reticle = placementReticleRef.current;
+    const anchor = avatarAnchorRef.current;
+    const camera = rendererRef.current?.xr.getCamera();
+    if (!reticle || !anchor || !camera || !placementAvailableRef.current) {
+      setARMessage("Point your camera at a flat surface to place the avatar.");
+      return;
+    }
+
+    reticle.updateMatrixWorld(true);
+    reticle.matrixWorld.decompose(anchor.position, anchor.quaternion, anchor.scale);
+
+    const viewerPosition = camera.getWorldPosition(new THREE.Vector3());
+    anchor.rotation.set(
+      0,
+      Math.atan2(
+        viewerPosition.x - anchor.position.x,
+        viewerPosition.z - anchor.position.z
+      ),
+      0
+    );
+    anchor.visible = true;
+    anchor.userData.placed = true;
+    if (arPanelRef.current) arPanelRef.current.visible = true;
+    reticle.visible = false;
+    placementAvailableRef.current = false;
+    setCanPlaceAvatar(false);
+    setARMessage("Reuben and the chat panel are placed. Type below and watch it update in the air.");
+  }, []);
+
+  const startAR = useCallback(async () => {
+    const xr = navigator.xr;
+    const renderer = rendererRef.current;
+
+    if (!xr || !renderer) {
+      setARMessage("Camera AR needs a compatible Android browser and ARCore device.");
+      return;
+    }
+
+    setARMessage("");
+    try {
+      if (!(await xr.isSessionSupported("immersive-ar"))) {
+        setARMessage("Immersive camera AR is not supported on this device/browser.");
+        return;
+      }
+      if (!arOverlayRoot) {
+        setARMessage("The AR chat controls are not ready yet. Please try again.");
+        return;
+      }
+
+      const session = await xr.requestSession("immersive-ar", {
+        requiredFeatures: ["hit-test", "local-floor", "dom-overlay"],
+        domOverlay: { root: arOverlayRoot },
+      });
+      xrSessionRef.current = session;
+
+      session.addEventListener(
+        "end",
+        () => {
+          hitTestSourceRef.current?.cancel();
+          hitTestSourceRef.current = null;
+          placementAvailableRef.current = false;
+          setCanPlaceAvatar(false);
+          if (placementReticleRef.current) {
+            placementReticleRef.current.visible = false;
+          }
+          if (avatarAnchorRef.current) {
+            avatarAnchorRef.current.userData.placed = false;
+            avatarAnchorRef.current.visible = true;
+            avatarAnchorRef.current.position.set(0, 0, 0);
+            avatarAnchorRef.current.rotation.set(0, 0, 0);
+          }
+          if (arPanelRef.current) arPanelRef.current.visible = false;
+          arEnvironmentObjectsRef.current.forEach((object) => {
+            object.visible = true;
+          });
+          if (sceneRef.current) {
+            sceneRef.current.background = new THREE.Color(backgroundColor);
+          }
+          if (controlsRef.current) controlsRef.current.enabled = true;
+          rendererRef.current?.setClearColor(0x000000, 0);
+          xrSessionRef.current = null;
+          setIsARMode(false);
+          onARModeChange?.(false);
+          setARMessage("");
+        },
+        { once: true }
+      );
+
+      renderer.xr.setReferenceSpaceType("local-floor");
+      renderer.setClearColor(0x000000, 0);
+      if (controlsRef.current) controlsRef.current.enabled = false;
+      await renderer.xr.setSession(session);
+      const viewerSpace = await session.requestReferenceSpace("viewer");
+      const requestHitTestSource = session.requestHitTestSource;
+      if (!requestHitTestSource) {
+        throw new Error("This browser does not support AR surface detection.");
+      }
+      const hitTestSource = await requestHitTestSource.call(session, {
+        space: viewerSpace,
+      });
+      if (!hitTestSource) {
+        throw new Error("Could not start AR surface detection.");
+      }
+      hitTestSourceRef.current = hitTestSource;
+
+      if (avatarAnchorRef.current) {
+        avatarAnchorRef.current.visible = false;
+        avatarAnchorRef.current.userData.placed = false;
+      }
+      if (placementReticleRef.current) {
+        placementReticleRef.current.visible = false;
+      }
+      arEnvironmentObjectsRef.current.forEach((object) => {
+        object.visible = false;
+      });
+      if (sceneRef.current) sceneRef.current.background = null;
+
+      setIsARMode(true);
+      onARModeChange?.(true);
+      setARMessage("Move your camera slowly to find a flat surface, then place Reuben and the chat panel.");
+    } catch (error) {
+      console.error("Unable to start immersive avatar AR:", error);
+      setARMessage(
+        error instanceof Error
+          ? `Could not start AR: ${error.message}`
+          : "Could not start camera AR. Check browser support and permissions."
+      );
+      if (xrSessionRef.current && !renderer.xr.isPresenting) {
+        void xrSessionRef.current.end();
+        xrSessionRef.current = null;
+      }
+    }
+  }, [arOverlayRoot, backgroundColor, onARModeChange]);
+
+  const exitAR = useCallback(() => {
+    if (xrSessionRef.current) void xrSessionRef.current.end();
+  }, []);
 
   // âœ… Toggle between PORTRAIT and FULL_BODY camera framing modes
   const toggleCameraMode = () => {
@@ -1297,7 +1706,9 @@ export default function Avatar3D({
         width: "100%",
         height: "min(500px, 85vh)",
         borderRadius: "20px",
-        background: `linear-gradient(160deg, ${backgroundColor} 0%, #12122a 100%)`,
+        background: isARMode
+          ? "transparent"
+          : `linear-gradient(160deg, ${backgroundColor} 0%, #12122a 100%)`,
         boxShadow: "0 30px 60px rgba(0,0,0,0.5)",
         overflow: "hidden",
         position: "relative",
@@ -1337,17 +1748,61 @@ export default function Avatar3D({
         </div>
       )}
 
-      <button
-        type="button"
-        aria-label={`Toggle camera framing: ${cameraMode === "FULL_BODY" ? "portrait" : "full body"}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          toggleCameraMode();
-        }}
-        className="absolute bottom-3 right-3 z-20 rounded-full border border-white/15 bg-slate-900/70 px-3 py-1.5 text-[11px] font-medium tracking-wide text-zinc-200 shadow-lg backdrop-blur-sm transition hover:border-violet-400 hover:bg-slate-900"
-      >
-        {cameraMode === "FULL_BODY" ? "Portrait" : "Full body"}
-      </button>
+      {!isARMode ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            void startAR();
+          }}
+          className="absolute bottom-3 left-3 z-20 rounded-full border border-violet-300/30 bg-slate-900/80 px-3 py-1.5 text-[11px] font-medium tracking-wide text-zinc-100 shadow-lg backdrop-blur-sm transition hover:border-violet-400"
+        >
+          Enter camera AR
+        </button>
+      ) : (
+        <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+          {!avatarAnchorRef.current?.userData.placed && (
+            <button
+              type="button"
+              onClick={placeHologram}
+              disabled={!canPlaceAvatar}
+              className="rounded-full bg-violet-600 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg disabled:opacity-50"
+            >
+              Place Reuben + chat panel
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={exitAR}
+            className="rounded-full border border-white/20 bg-slate-900/80 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg"
+          >
+            Exit AR
+          </button>
+        </div>
+      )}
+
+      {arMessage && (
+        <div
+          className="absolute left-1/2 top-3 z-20 max-w-[90%] -translate-x-1/2 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-center text-xs text-white shadow-lg backdrop-blur-sm"
+          role="status"
+        >
+          {arMessage}
+        </div>
+      )}
+
+      {!isARMode && (
+        <button
+          type="button"
+          aria-label={`Toggle camera framing: ${cameraMode === "FULL_BODY" ? "portrait" : "full body"}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleCameraMode();
+          }}
+          className="absolute bottom-3 right-3 z-20 rounded-full border border-white/15 bg-slate-900/70 px-3 py-1.5 text-[11px] font-medium tracking-wide text-zinc-200 shadow-lg backdrop-blur-sm transition hover:border-violet-400 hover:bg-slate-900"
+        >
+          {cameraMode === "FULL_BODY" ? "Portrait" : "Full body"}
+        </button>
+      )}
     </div>
   );
 }

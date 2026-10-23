@@ -30,6 +30,8 @@ test("rest pose keeps both arms lowered with a relaxed elbow bend", () => {
 
   assert.ok(pose.armLeft.z < 0, "left arm should rest below the model's T-pose");
   assert.ok(pose.armRight.z > 0, "right arm should rest below the model's T-pose");
+  assert.equal(pose.shoulderLeft.z, 0);
+  assert.equal(pose.shoulderRight.z, 0);
   assert.ok(pose.forearmLeft.x > 0);
   assert.ok(pose.forearmRight.x > 0);
 });

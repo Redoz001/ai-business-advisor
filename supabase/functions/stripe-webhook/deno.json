@@ -1,5 +1,8 @@
 {
+  "nodeModulesDir": "auto",
   "imports": {
-    "@supabase/functions-js": "jsr:@supabase/functions-js@^2"
+    "@supabase/functions-js": "jsr:@supabase/functions-js@^2",
+    "stripe": "https://esm.sh/stripe@17.1.0",
+    "npm:@types/node": "npm:@types/node@^20.17.10"
   }
 }

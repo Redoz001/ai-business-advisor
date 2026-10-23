@@ -96,7 +96,6 @@ export async function sendMessageToAI({
               });
 
             fullText += chunk;
-R
             yield {
               chunk,
               fullText,

@@ -1,6 +1,7 @@
 ﻿import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { checkUserLimit, consumeUserRequest } from "./billing.ts";
 import { routeRequest, streamRequest } from "./reuben_engine.ts";
 import {
   getSessionHistory,
@@ -29,6 +30,40 @@ serve(async (req) => {
       userId,
       stream,
     } = await req.json();
+
+    const canUseService = await checkUserLimit(userId);
+    if (!canUseService) {
+      return new Response(
+        JSON.stringify({
+          type: "error",
+          payload: "This account is on the free tier. Upgrade to Intelligence for paid AI access.",
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
+    const requestConsumed = await consumeUserRequest(userId);
+    if (!requestConsumed) {
+      return new Response(
+        JSON.stringify({
+          type: "error",
+          payload: "Your free-tier request limit has been reached. Upgrade to Intelligence for more access.",
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
 
     const sessionHistory =
       await getSessionHistory(

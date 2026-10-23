@@ -5,6 +5,7 @@
 
 import MessageErrorBoundary from "./MessageErrorBoundary";
 import MessageRenderer from "./MessageRenderer";
+import FeedbackForm from "../../../components/FeedbackForm.jsx";
 
 import type {
   ConversationMessage,
@@ -15,6 +16,8 @@ type ConversationProps = {
   welcome: string;
   username: string;
   loadingHistory: boolean;
+  userId?: string;
+  chatId?: string | null;
   onDownloadImage?: (url: string, filename: string) => void;
   onDownloadVideo?: (url: string, filename: string) => void;
 };
@@ -24,6 +27,8 @@ export default function Conversation({
   welcome,
   username,
   loadingHistory,
+  userId,
+  chatId,
   onDownloadImage,
   onDownloadVideo,
 }: ConversationProps) {
@@ -81,6 +86,18 @@ export default function Conversation({
             {message.status === "streaming" && (
               <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-zinc-400 align-middle" />
             )}
+            {message.role === "assistant" &&
+              message.status !== "streaming" &&
+              message.status !== "pending" &&
+              message.status !== "error" &&
+              !["Generating image...", "Generating video..."].includes(message.content) && (
+                <FeedbackForm
+                  reply
+                  userId={userId}
+                  chatId={chatId}
+                  messageId={message.id}
+                />
+              )}
           </div>
         ))}
       </div>

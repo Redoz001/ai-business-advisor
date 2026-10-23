@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   enhanceVisualPrompt,
   buildMotionPromptVariants,
+  parseVideoEditInstructions,
 } from "../src/services/visualPrompting.js";
 
 test("enhanceVisualPrompt adds cinematic, high-quality detail for image requests", () => {
@@ -31,4 +32,19 @@ test("buildMotionPromptVariants rounds invalid and fractional counts safely", ()
 
   assert.equal(variants.length, 3);
   assert.ok(variants.every((variant) => /sunset|ocean/i.test(variant)));
+});
+
+test("parseVideoEditInstructions extracts supported filters, trims, speed, and caption", () => {
+  assert.deepEqual(
+    parseVideoEditInstructions(
+      "Make it black and white, slow motion, trim from 1.5 seconds, trim to 8 seconds, caption: Summer trip"
+    ),
+    {
+      filters: ["grayscale(1)"],
+      speed: 0.5,
+      trimStartSeconds: 1.5,
+      trimEndSeconds: 8,
+      caption: "Summer trip",
+    }
+  );
 });

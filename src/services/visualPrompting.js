@@ -74,7 +74,41 @@ export function buildMotionPromptVariants(prompt, count = 4) {
   return variants;
 }
 
+export function parseVideoEditInstructions(instruction) {
+  const prompt = sanitizePrompt(instruction).toLowerCase();
+  const filters = [];
+
+  if (/black and white|grayscale|greyscale|monochrome/.test(prompt)) {
+    filters.push("grayscale(1)");
+  }
+  if (/sepia|vintage/.test(prompt)) filters.push("sepia(1)");
+  if (/vivid|saturat/.test(prompt)) filters.push("saturate(1.35)");
+  if (/high contrast|more contrast/.test(prompt)) filters.push("contrast(1.2)");
+  if (/brighter|brighten/.test(prompt)) filters.push("brightness(1.18)");
+  if (/darker|darken/.test(prompt)) filters.push("brightness(0.82)");
+
+  const speed = /slow[- ]motion|slow it down/.test(prompt)
+    ? 0.5
+    : /speed it up|faster|fast[- ]motion/.test(prompt)
+      ? 1.5
+      : 1;
+  const trimStart = prompt.match(/(?:start|trim from)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|seconds?)\b/);
+  const trimEnd = prompt.match(/(?:end|trim to|cut at)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|seconds?)\b/);
+  const caption = sanitizePrompt(instruction).match(
+    /(?:caption|title|overlay text|add text)\s*[:\-]\s*["“]?(.+?)["”]?(?:$|[.!?]\s)/i
+  )?.[1]?.trim();
+
+  return {
+    filters,
+    speed,
+    trimStartSeconds: trimStart ? Number(trimStart[1]) : 0,
+    trimEndSeconds: trimEnd ? Number(trimEnd[1]) : null,
+    caption: caption || "",
+  };
+}
+
 export default {
   enhanceVisualPrompt,
   buildMotionPromptVariants,
+  parseVideoEditInstructions,
 };

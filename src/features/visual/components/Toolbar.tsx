@@ -1,4 +1,6 @@
-﻿type ToolbarProps = {
+﻿import { Download } from "lucide-react";
+
+type ToolbarProps = {
   hasVisual: boolean;
   onReset: () => void;
   onDownload: () => void;
@@ -35,7 +37,8 @@ export default function Toolbar({
           onClick={onDownload}
           className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-200 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Export SVG
+          <Download aria-hidden="true" className="mr-2 inline size-4" />
+          Download media
         </button>
       </div>
     </div>

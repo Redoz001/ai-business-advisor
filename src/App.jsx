@@ -16,6 +16,7 @@ const Auth = lazy(() => import("./Auth.jsx"));
 const Callback = lazy(() => import("./Callback.jsx"));
 const Visual = lazy(() => import("./Visual.jsx"));
 const Settings = lazy(() => import("./components/settings.jsx"));
+const BuildStudio = lazy(() => import("./components/BuildStudio.jsx"));
 
 const fallbackScreen = (
   <div className="flex h-screen items-center justify-center bg-black text-white">
@@ -142,6 +143,52 @@ export default function App() {
   }, [sessions]);
 
   /* ===============================
+     CHECKOUT RETURN FLOW
+  =============================== */
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkoutStatus = params.get("checkout");
+
+    if (!checkoutStatus || !user?.id) return;
+
+    let cancelled = false;
+
+    const refreshAfterCheckout = async () => {
+      for (let attempt = 0; attempt < 12 && !cancelled; attempt += 1) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("plan, subscription_status, is_premium")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!error && data) {
+          const normalizedPlan = String(data.plan ?? "normal").toLowerCase();
+          const isPaid = Boolean(data.is_premium) ||
+            String(data.subscription_status ?? "").toLowerCase() === "active" ||
+            String(data.subscription_status ?? "").toLowerCase() === "trialing";
+
+          if (isPaid || normalizedPlan === "intelligence") {
+            setUser((current) => (current ? { ...current } : current));
+            break;
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
+      const nextUrl = window.location.pathname;
+      window.history.replaceState({}, "", nextUrl);
+    };
+
+    refreshAfterCheckout();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  /* ===============================
      LOADING
   =============================== */
 
@@ -157,6 +204,15 @@ export default function App() {
     <Suspense fallback={fallbackScreen}>
       <BackgroundAssistant />
       <Routes>
+        <Route
+          path="/studio"
+          element={
+            user
+              ? <BuildStudio user={user} />
+              : <Navigate to="/auth" replace />
+          }
+        />
+
         {/* OAuth Callback */}
         <Route
           path="/auth/callback"

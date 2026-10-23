@@ -18,6 +18,17 @@ const SKIN_TONES = [
   { name: "Deep", value: 0x503328 },
 ];
 
+const HAIR_STYLES: Array<{
+  value: AvatarProfile["hairStyle"];
+  label: string;
+}> = [
+  { value: "short", label: "Short" },
+  { value: "long", label: "Long" },
+  { value: "bun", label: "Bun" },
+  { value: "spiky", label: "Spiky" },
+  { value: "bald", label: "Bald" },
+];
+
 const BACKGROUNDS = [
   { name: "Midnight", value: "#15182d" },
   { name: "Indigo", value: "#312e81" },
@@ -97,6 +108,10 @@ export default function AvatarMode({
   const [loadingCustomization, setLoadingCustomization] = useState(true);
   const [savingCustomization, setSavingCustomization] = useState(false);
   const [customizationMessage, setCustomizationMessage] = useState("");
+  const [arOverlayRoot, setArOverlayRoot] = useState<HTMLDivElement | null>(null);
+  const [isARMode, setIsARMode] = useState(false);
+  const [arChatMessage, setArChatMessage] = useState("");
+  const [arLastUserMessage, setArLastUserMessage] = useState("");
   const currentEntry = AVATAR_CATALOG.find(
     (entry) => entry.profile.id === profile.id
   );
@@ -157,11 +172,15 @@ export default function AvatarMode({
           saved.skinTone <= 0xffffff
             ? saved.skinTone
             : baseProfile.skinTone;
+        const savedHairStyle =
+          HAIR_STYLES.find((style) => style.value === saved.hairStyle)?.value ??
+          baseProfile.hairStyle;
 
         setProfile({
           ...baseProfile,
           name: savedName || baseProfile.name,
           skinTone: savedSkinTone,
+          hairStyle: savedHairStyle,
         });
         if (isHexColor(saved.backgroundColor)) {
           setBackgroundColor(saved.backgroundColor);
@@ -436,6 +455,7 @@ export default function AvatarMode({
             id: profile.id,
             name,
             skinTone: profile.skinTone,
+            hairStyle: profile.hairStyle,
             backgroundColor,
           },
         },
@@ -452,10 +472,26 @@ export default function AvatarMode({
     }
   };
 
+  const sendARChatMessage = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const message = arChatMessage.trim();
+    if (!message) return;
+    setArLastUserMessage(message);
+    onSendMessage(message);
+    setArChatMessage("");
+    setIsThinking(true);
+    setState("THINKING");
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black">
+    <div
+      ref={setArOverlayRoot}
+      className={`fixed inset-0 z-50 flex flex-col ${
+        isARMode ? "bg-transparent" : "bg-black"
+      }`}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between p-4">
+      <div className={`flex items-center justify-between p-4 ${isARMode ? "bg-black/35" : ""}`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowCatalog(!showCatalog)}
@@ -495,7 +531,7 @@ export default function AvatarMode({
         </div>
       )}
 
-      {showCustomization && (
+      {showCustomization && !isARMode && (
         <section className="mx-4 mb-3 max-h-[28vh] overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/90 p-3 text-white">
           <label className="block text-xs text-zinc-300" htmlFor="avatar-name">
             Avatar name
@@ -557,6 +593,33 @@ export default function AvatarMode({
               </label>
             </div>
           </div>
+
+          <label className="mt-3 block text-xs text-zinc-300" htmlFor="avatar-hair-style">
+            Hair style
+          </label>
+          <select
+            id="avatar-hair-style"
+            value={profile.hairStyle}
+            disabled={loadingCustomization}
+            onChange={(event) => {
+              const hairStyle = HAIR_STYLES.find(
+                (style) => style.value === event.target.value
+              )?.value;
+              if (!hairStyle) return;
+              setProfile((current) => ({
+                ...current,
+                hairStyle,
+              }));
+              setCustomizationMessage("");
+            }}
+            className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-violet-400"
+          >
+            {HAIR_STYLES.map((style) => (
+              <option key={style.value} value={style.value}>
+                {style.label}
+              </option>
+            ))}
+          </select>
 
           <div className="mt-3">
             <p className="mb-2 text-xs text-zinc-300">Background</p>
@@ -625,7 +688,7 @@ export default function AvatarMode({
       )}
 
       {/* Avatar Catalog */}
-      {showCatalog && (
+      {showCatalog && !isARMode && (
         <div className="mx-4 mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {AVATAR_CATALOG.map((entry) => (
             <button
@@ -659,6 +722,14 @@ export default function AvatarMode({
           <Avatar3D
             profile={profile}
             backgroundColor={backgroundColor}
+            arOverlayRoot={arOverlayRoot}
+            arPanelContent={{
+              userMessage: arLastUserMessage,
+              draft: arChatMessage,
+              response: aiResponseText ?? "",
+              status: state,
+            }}
+            onARModeChange={setIsARMode}
             isMicActive={isMicActive}
             isSpeaking={isSpeaking}
             isThinking={isThinking}
@@ -671,7 +742,7 @@ export default function AvatarMode({
       </div>
 
       {/* Transcript */}
-      {transcript && (
+      {transcript && !isARMode && (
         <div className="mx-4 mt-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-white">
           <span className="text-zinc-400">You: </span>
           {transcript}
@@ -679,7 +750,29 @@ export default function AvatarMode({
       )}
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-4 p-4">
+      {isARMode && (
+        <form
+          onSubmit={sendARChatMessage}
+          className="mx-3 mb-2 flex items-center gap-2 rounded-2xl border border-white/15 bg-black/65 p-2 shadow-xl backdrop-blur-md"
+        >
+          <input
+            value={arChatMessage}
+            onChange={(event) => setArChatMessage(event.target.value)}
+            placeholder="Type to talk to your AI..."
+            aria-label="Message your AI in camera AR"
+            className="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-3 text-base text-white outline-none placeholder:text-zinc-300 focus:ring-1 focus:ring-violet-400"
+          />
+          <button
+            type="submit"
+            disabled={!arChatMessage.trim()}
+            className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+          >
+            Send
+          </button>
+        </form>
+      )}
+
+      <div className={`flex items-center justify-center gap-4 p-4 ${isARMode ? "bg-black/35" : ""}`}>
         <button
           onClick={isMicActive ? stopListening : startListening}
           className={`flex h-14 w-14 items-center justify-center rounded-full text-2xl transition ${

@@ -1,11 +1,15 @@
-﻿type CanvasProps = {
-  svg: string;
+﻿import type { VisualMediaType } from "../types";
+
+type CanvasProps = {
+  mediaUrl: string;
+  mediaType: VisualMediaType | null;
   loading: boolean;
   error: string;
 };
 
 export default function Canvas({
-  svg,
+  mediaUrl,
+  mediaType,
   loading,
   error,
 }: CanvasProps) {
@@ -33,7 +37,7 @@ export default function Canvas({
         </div>
       )}
 
-      {!loading && !error && !svg && (
+      {!loading && !error && !mediaUrl && (
         <div className="relative max-w-lg text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl border border-violet-500/20 bg-violet-500/10 text-3xl">
             ✦
@@ -50,11 +54,22 @@ export default function Canvas({
         </div>
       )}
 
-      {!loading && !error && svg && (
+      {!loading && !error && mediaUrl && mediaType === "video" && (
+        <video
+          key={mediaUrl}
+          src={mediaUrl}
+          controls
+          playsInline
+          className="relative max-h-[70vh] max-w-full rounded-2xl border border-white/10 bg-black shadow-2xl"
+        />
+      )}
+
+      {!loading && !error && mediaUrl && mediaType === "image" && (
         <div className="relative w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-violet-950/40">
-          <div
-            className="[&_svg]:block [&_svg]:h-auto [&_svg]:w-full"
-            dangerouslySetInnerHTML={{ __html: svg }}
+          <img
+            src={mediaUrl}
+            alt="Generated or edited visual"
+            className="block max-h-[70vh] w-full object-contain"
           />
         </div>
       )}

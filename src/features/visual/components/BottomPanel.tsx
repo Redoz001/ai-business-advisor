@@ -23,7 +23,7 @@ export default function BottomPanel({
       <div className="flex min-h-24 gap-3 overflow-x-auto p-4">
         {history.length === 0 ? (
           <p className="text-sm text-gray-500">
-            Generated visuals will appear here.
+            Your saved media will appear here.
           </p>
         ) : (
           history.map((item) => (
@@ -31,13 +31,16 @@ export default function BottomPanel({
               key={item.id}
               type="button"
               onClick={() => onRestore(item)}
-              className="min-w-52 rounded-xl border border-white/10 bg-white/5 p-3 text-left transition hover:border-violet-500/40"
+              className="w-44 shrink-0 rounded-lg border border-white/10 bg-white/5 p-2 text-left transition hover:border-emerald-300/50"
             >
-              <p className="line-clamp-2 text-sm text-gray-200">
-                {item.prompt}
-              </p>
-              <p className="mt-2 text-xs text-gray-500">
-                {new Date(item.createdAt).toLocaleTimeString()}
+              {item.mediaType === "image" ? (
+                <img src={item.outputUrl} alt="" className="mb-2 aspect-video w-full rounded bg-black object-contain" />
+              ) : (
+                <div className="mb-2 flex aspect-video items-center justify-center rounded bg-black text-xs uppercase text-gray-400">Video</div>
+              )}
+              <p className="line-clamp-2 text-xs text-gray-200">{item.prompt}</p>
+              <p className="mt-1 text-[10px] text-gray-500">
+                {item.mediaType} · {new Date(item.createdAt).toLocaleString()}
               </p>
             </button>
           ))

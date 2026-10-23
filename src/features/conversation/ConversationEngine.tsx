@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase.js";
 import ChatInput from "./components/ChatInput";
 import Conversation from "./components/Conversation";
 
@@ -18,6 +19,87 @@ export default function ConversationEngine(
 
   const [lastAiResponse, setLastAiResponse] =
     useState("");
+  const [plan, setPlan] = useState("normal");
+  const [usageUsed, setUsageUsed] = useState(0);
+  const [usageLimit, setUsageLimit] = useState(20);
+  const [requestResetAt, setRequestResetAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!props.user?.id) {
+      setPlan("normal");
+      setUsageUsed(0);
+      setUsageLimit(20);
+      setRequestResetAt(null);
+      return;
+    }
+
+    let active = true;
+
+    const loadUsage = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("plan, requests_used, requests_limit, request_reset_at, subscription_status, is_premium")
+        .eq("id", props.user.id)
+        .maybeSingle();
+
+      if (!active || error) {
+        return;
+      }
+
+      const normalizedPlan = String(data?.plan ?? "normal").toLowerCase();
+      const isPaid = Boolean(data?.is_premium) ||
+        String(data?.subscription_status ?? "").toLowerCase() === "active" ||
+        String(data?.subscription_status ?? "").toLowerCase() === "trialing";
+
+      const resolvedPlan = isPaid || normalizedPlan === "intelligence" ? "intelligence" : normalizedPlan;
+
+      setPlan(resolvedPlan);
+      setUsageUsed(Number(data?.requests_used ?? 0));
+      setUsageLimit(Number(data?.requests_limit ?? 20));
+      setRequestResetAt(data?.request_reset_at ?? null);
+    };
+
+    loadUsage();
+
+    const channel = supabase
+      .channel(`usage-sync-${props.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${props.user.id}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("plan, requests_used, requests_limit, request_reset_at, subscription_status, is_premium")
+            .eq("id", props.user.id)
+            .maybeSingle();
+
+          if (!active || error || !data) {
+            return;
+          }
+
+          const normalizedPlan = String(data?.plan ?? "normal").toLowerCase();
+          const isPaid = Boolean(data?.is_premium) ||
+            String(data?.subscription_status ?? "").toLowerCase() === "active" ||
+            String(data?.subscription_status ?? "").toLowerCase() === "trialing";
+
+          setPlan(isPaid || normalizedPlan === "intelligence" ? "intelligence" : normalizedPlan);
+          setUsageUsed(Number(data?.requests_used ?? 0));
+          setUsageLimit(Number(data?.requests_limit ?? 20));
+          setRequestResetAt(data?.request_reset_at ?? null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [props.user?.id]);
 
   const handleQuickSend = (message: string) => {
     conversation.setInput(message);
@@ -25,6 +107,36 @@ export default function ConversationEngine(
     setTimeout(() => {
       conversation.sendMessage();
     }, 50);
+  };
+
+  const handleUpgradeToIntelligence = async () => {
+    if (!props.user?.id) {
+      window.location.href = "/auth";
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("billing-checkout", {
+        body: {
+          userId: props.user.id,
+          email: props.user.email,
+          plan: "intelligence",
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.url) {
+        throw new Error("Checkout URL was not returned.");
+      }
+
+      window.location.href = data.url;
+    } catch (upgradeError) {
+      console.error("Upgrade failed:", upgradeError);
+      alert("Could not start the Intelligence checkout. Please try again.");
+    }
   };
 
   // Watch for new assistant messages to speak them
@@ -54,6 +166,8 @@ export default function ConversationEngine(
         messages={conversation.messages}
         welcome={conversation.welcome}
         username={username}
+        userId={props.user?.id}
+        chatId={props.activeChat}
         loadingHistory={
           conversation.historyLoading
         }
@@ -87,6 +201,11 @@ export default function ConversationEngine(
         }
         onQuickSend={handleQuickSend}
         aiResponseText={lastAiResponse}
+        plan={plan}
+        usageUsed={usageUsed}
+        usageLimit={usageLimit}
+        requestResetAt={requestResetAt}
+        onUpgradeToIntelligence={handleUpgradeToIntelligence}
       />
     </div>
   );
