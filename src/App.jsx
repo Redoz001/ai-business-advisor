@@ -251,7 +251,7 @@ export default function App() {
                   />
                 </div>
 
-                <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
 
                   <div className="flex h-14 items-center border-b border-zinc-800 px-3">
 
