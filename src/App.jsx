@@ -237,8 +237,8 @@ export default function App() {
               <div className="flex h-screen overflow-hidden bg-black text-white">
 
                 <div
-                  className={`overflow-hidden transition-all duration-300 ${
-                    sidebarOpen ? "w-60" : "w-0"
+                  className={`overflow-hidden transition-all duration-300 flex-shrink-0 z-20 ${
+                    sidebarOpen ? "w-30" : "w-0"
                   }`}
                 >
                   <Sidebar
