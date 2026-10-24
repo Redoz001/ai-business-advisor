@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { MessageService } from "../features/conversation/services/MessageService";
 import { supabase } from "../lib/supabase.js";
-import { createProjectArchive } from "../lib/projectArchive.js";
+import {
+  createProjectArchive,
+  downloadProject,
+  getDeployInstructions,
+  getTotalProjectSize,
+} from "../lib/projectArchive.js";
 import { buildStudioPrompt, parseGeneratedFiles } from "../lib/studioProjects.js";
 
 const PROJECT_TYPES = [
@@ -39,6 +44,7 @@ export default function BuildStudio({ user }) {
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showDeploy, setShowDeploy] = useState(false);
 
   const activeSource = project?.files?.[activeFile] ?? "";
   const projectBusy = generating || saving;
@@ -493,16 +499,44 @@ export default function BuildStudio({ user }) {
                 </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 px-4 py-3">
-                <p className="text-xs text-zinc-500">Your project is saved in your account. Review the generated files before using them.</p>
-                <button
-                  type="button"
-                  disabled
-                  title="Hosting account connection and deployment are not configured yet."
-                  className="cursor-not-allowed rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-500"
-                >
-                  Deploy · hosting setup required
-                </button>
+                <p className="text-xs text-zinc-500">
+                  {getTotalProjectSize(project.files)} &bull; Saved to your account
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => downloadProject(project)}
+                    className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-black transition-colors"
+                  >
+                    ↓ Export Project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeploy(!showDeploy)}
+                    className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-500 transition-colors"
+                  >
+                    {showDeploy ? "Hide" : "Show"} Deploy Instructions
+                  </button>
+                </div>
               </div>
+              {showDeploy && (
+                <div className="border-t border-zinc-800 px-4 py-3 bg-black/20">
+                  <h3 className="text-xs font-semibold text-zinc-300 mb-2 uppercase tracking-wider">
+                    Deploy {project.kind.charAt(0).toUpperCase() + project.kind.slice(1)}
+                  </h3>
+                  <div className="space-y-1">
+                    {getDeployInstructions(project.kind).steps.map((step, i) => (
+                      <p key={i} className="text-xs text-zinc-400 leading-5">
+                        {step}
+                      </p>
+                    ))}
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Free hosting:{" "}
+                      {getDeployInstructions(project.kind).freeHosts.join(", ")}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex min-h-64 flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 px-6 text-center">
