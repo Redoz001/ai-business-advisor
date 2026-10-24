@@ -253,7 +253,7 @@ export default function App() {
 
                 <div className={`flex flex-col min-w-0 overflow-hidden ${
                     sidebarOpen ? "w-[75%]" : "flex-1"
-                  }`}
+                  }`}>
 
                   <div className="flex h-14 items-center border-b border-zinc-800 px-3">
 
