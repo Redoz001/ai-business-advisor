@@ -238,7 +238,7 @@ export default function App() {
 
                 <div
                   className={`overflow-hidden transition-all duration-300 ${
-                    sidebarOpen ? "w-75" : "w-0"
+                    sidebarOpen ? "w-80" : "w-0"
                   }`}
                 >
                   <Sidebar
