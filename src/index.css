@@ -1,15 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-/* =========================
-   THEME VARIABLES
-========================= */
-:root {
-  --primary: #00ffcc;
-  --bg-dark: #000000;
-  --bg-panel: #0a0a0a;
-  --text-main: #ffffff;
+@theme {
+  --color-primary: #00ffcc;
+  --color-dark: #0a0a0a;
+  --color-bg-dark: #000000;
+  --color-bg-panel: #0a0a0a;
+  --color-text-main: #ffffff;
 }
 
 /* =========================
@@ -21,8 +17,6 @@ html, body {
   background: var(--bg-dark);
   color: var(--text-main);
   font-family: Arial, sans-serif;
-
-  /* NEW (SAFE UPGRADES) */
   height: 100%;
   width: 100%;
   scroll-behavior: smooth;
