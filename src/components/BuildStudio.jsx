@@ -35,6 +35,7 @@ export default function BuildStudio({ user }) {
   const [selectedId, setSelectedId] = useState(null);
   const [projectType, setProjectType] = useState("website");
   const [cameraOverlay, setCameraOverlay] = useState(false);
+  const [domainName, setDomainName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [project, setProject] = useState(null);
   const [activeFile, setActiveFile] = useState("index.html");
@@ -97,7 +98,7 @@ export default function BuildStudio({ user }) {
       const chatId = await MessageService.createChat(user.id);
       await MessageService.updateChatTitle(chatId, `Build: ${brief}`);
       const response = await MessageService.requestTextResponse({
-        message: buildStudioPrompt(projectType, brief, { cameraOverlay }),
+        message: buildStudioPrompt(projectType, brief, { cameraOverlay, domainName }),
         chatId,
         userId: user.id,
       });
@@ -148,6 +149,7 @@ export default function BuildStudio({ user }) {
     setSelectedId(selected.id);
     setProjectType(selected.kind);
     setPrompt(selected.prompt);
+    setDomainName("");
     setActiveFile(selected.files?.["index.html"] ? "index.html" : Object.keys(selected.files ?? {})[0]);
     setIsDirty(false);
     setError("");
@@ -160,6 +162,7 @@ export default function BuildStudio({ user }) {
     setProject(null);
     setSelectedId(null);
     setPrompt("");
+    setDomainName("");
     setActiveFile("index.html");
     setIsDirty(false);
     setError("");
@@ -375,6 +378,22 @@ export default function BuildStudio({ user }) {
                   <span className="mt-1 block text-xs leading-5 text-zinc-500">
                     Show the app as a floating panel over the live camera view. This is a screen-based AR effect, not a hologram.
                   </span>
+                </span>
+              </label>
+            )}
+            {(projectType === "website" || projectType === "pwa") && (
+              <label className="mt-3 block text-sm">
+                <span className="block text-zinc-200 mb-1">Custom domain (optional)</span>
+                <input
+                  type="text"
+                  value={domainName}
+                  disabled={projectBusy}
+                  onChange={(event) => setDomainName(event.target.value)}
+                  placeholder="e.g. myapp.com"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none placeholder:text-zinc-600 focus:border-emerald-500"
+                />
+                <span className="mt-1 block text-xs leading-5 text-zinc-500">
+                  Generate deployment config and DNS setup instructions for this domain.
                 </span>
               </label>
             )}

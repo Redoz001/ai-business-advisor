@@ -72,16 +72,84 @@ export function parseGeneratedFiles(response, projectType) {
   };
 }
 
-export function buildStudioPrompt(projectType, userPrompt, { cameraOverlay = false } = {}) {
-  const requirements = {
+export function buildStudioPrompt(projectType, userPrompt, { cameraOverlay = false, domainName = "" } = {}) {
+const designSystem = {
     website:
-      "Create a polished responsive website. Use semantic accessible HTML and inline CSS/JavaScript. Include working interactions, useful sample content, and mobile layouts.",
+      `Create a PROFESSIONAL, MODERN, and VISUALLY STUNNING website. Requirements:
+- Use a complete design system: CSS custom properties for colors, spacing, typography, shadows, and border-radius.
+- Include a hero section with gradient background, large heading, subheading, and CTA buttons.
+- Use Google Fonts (Inter, Poppins, or similar) loaded via CDN.
+- Include at least 4 sections: Hero, Features/Services, About/Team, and Contact/Footer.
+- Add CSS animations: fade-in on scroll, hover transforms, smooth transitions, and micro-interactions.
+- Use SVG icons inline (not emoji) for features and navigation.
+- Include a responsive navigation bar with mobile hamburger menu.
+- Add a footer with links, social icons, and copyright.
+- Use modern CSS: flexbox/grid layouts, clamp() for responsive typography, CSS variables.
+- Add subtle shadows, gradients, and glassmorphism effects.
+- Include placeholder images using https://picsum.photos or SVG illustrations.
+- Make it fully responsive (mobile, tablet, desktop).
+- Add dark mode support via CSS variables and a toggle.
+- Include real, meaningful content (not lorem ipsum) based on the user's brief.
+- Add form validation with visual feedback for contact forms.
+- Include a loading state and smooth page transitions.
+- Use semantic HTML5 elements (header, nav, main, section, article, footer).
+- Add ARIA labels and accessibility features.
+- Include a back-to-top button.
+- Add a cookie/consent banner if applicable.`,
     pwa:
-      "Create a complete responsive installable PWA. Return index.html, manifest.webmanifest, sw.js, README.md, and any app assets. Include a manifest link and service-worker registration in index.html, add valid app name/theme/start URL/display metadata and installable icons, and implement an app-shell cache with an offline fallback in sw.js. In README.md explain how to serve over localhost or HTTPS and test installation and offline behavior. Use no secret keys or analytics.",
+      `Create a COMPLETE, PROFESSIONAL, installable PWA. Requirements:
+- Return index.html, manifest.webmanifest, sw.js, README.md, and any app assets.
+- Use a complete design system with CSS custom properties.
+- Include a hero/landing section with gradient background and CTA.
+- Use Google Fonts and inline SVG icons.
+- Add CSS animations, transitions, and hover effects.
+- Implement app-shell caching in sw.js with offline fallback.
+- Add a manifest with proper name, theme_color, background_color, display: standalone, and icons (use data URIs for icons).
+- Include service worker registration in index.html.
+- In README.md explain how to serve over localhost or HTTPS and test installation and offline behavior.
+- Add install prompt handling (beforeinstallprompt event).
+- Make it fully responsive and accessible.
+- Include meaningful content based on the user's brief.
+- Add dark mode support.
+- Use semantic HTML5 and ARIA labels.
+- Include a loading spinner and smooth transitions.`,
     game:
-      "Create a complete playable browser game in index.html using inline CSS and JavaScript. Include instructions, keyboard and touch controls where suitable, and a reset/restart control.",
+      `Create a COMPLETE, POLISHED browser game. Requirements:
+- Use a professional design with gradients, shadows, and animations.
+- Include a game title screen with animated background.
+- Add a game over screen with score display and restart button.
+- Implement smooth game loop with requestAnimationFrame.
+- Add particle effects, screen shake, or visual feedback for actions.
+- Include sound effects using Web Audio API (optional but recommended).
+- Add a high score system using localStorage.
+- Include keyboard AND touch controls.
+- Add a pause/resume feature.
+- Use canvas or DOM-based rendering with smooth animations.
+- Include instructions screen with visual key indicators.
+- Add difficulty progression.
+- Make it mobile-friendly with touch controls.
+- Include a loading screen.
+- Use CSS animations for UI transitions.
+- Add visual polish: glows, gradients, and particle effects.`,
     android:
-      "Create a complete cross-platform native iOS and Android app using Expo and React Native, not a website or webview wrapper. Return package.json, an Expo app entry point (App.js or app/index.js), app.json, and a README.md with install, local run, device testing, and EAS build/submission steps. Use accessible responsive native components, include all essential source/config files, and list any required permissions with justification. Do not claim it has been built, signed, or published.",
+      `Create a COMPLETE cross-platform native iOS and Android app using Expo and React Native. Requirements:
+- Return package.json, an Expo app entry point (App.js or app/index.js), app.json, and README.md.
+- Use React Native Paper or NativeBase for professional UI components.
+- Include a splash screen and app icon configuration.
+- Add navigation using React Navigation (stack + tab navigator).
+- Implement a professional design system with consistent theming.
+- Include at least 3 screens: Home, Details, Settings.
+- Add loading states, error states, and empty states.
+- Implement data persistence with AsyncStorage.
+- Add haptic feedback for interactions.
+- Include pull-to-refresh and infinite scroll where applicable.
+- Add dark mode support.
+- Include form validation with visual feedback.
+- Add animations using React Native Reanimated.
+- Include a camera feature if requested.
+- Use accessible components with proper labels.
+- Add a README with complete setup, run, and build instructions.
+- List all required permissions with justification.`,
   }[projectType];
   const cameraRequirements = cameraOverlay && ["website", "pwa", "android"].includes(projectType)
     ? projectType === "android"
@@ -89,13 +157,22 @@ export function buildStudioPrompt(projectType, userPrompt, { cameraOverlay = fal
       : "Add a camera-overlay mode using getUserMedia. Show the complete app as a readable floating panel over the live camera view, provide front/rear camera switching with facingMode, and keep typed input reflected immediately in the panel. Request permission only after the user explicitly starts camera mode, handle denial with a usable non-camera fallback, and stop all media tracks when leaving the mode. For PWAs, explain that camera access requires HTTPS or localhost. This is a screen-based overlay, not a spatially anchored hologram."
     : "";
 
+  const domainRequirements = projectType === "website" || projectType === "pwa"
+    ? `Generate a unique, brandable project name${domainName ? ` targeting the domain "${domainName}"` : " that could work as a custom domain (e.g., \"myapp.com\", \"getmyapp.io\")"}. Include a vercel.json or netlify.toml configuration file for deployment. In README.md, include instructions for deploying to Vercel/Netlify with one click, setting up a custom domain${domainName ? ` ("${domainName}")` : ""}, configuring DNS records (A, CNAME, TXT), enabling HTTPS, and setting up environment variables.`
+    : "";
+
   return [
-    "Generate a complete software project from this user brief.",
-    requirements,
+    "Generate a COMPLETE, PROFESSIONAL, PRODUCTION-READY software project from this user brief.",
+    "The output must be COMPLEX and POLISHED, not a simple template. Think like a senior frontend developer building for a real client.",
+    designSystem,
     cameraRequirements,
+    domainRequirements,
     'Return only valid JSON in this exact shape: {"name":"short project name","files":{"relative/path":"complete file contents"}}.',
-    "Do not use markdown fences. Include complete file contents, not placeholders or omissions. Keep the total output under 300 KB and use relative paths without parent-directory segments.",
+    "Do not use markdown fences. Include complete file contents, not placeholders or omissions.",
+    "Keep the total output under 300 KB and use relative paths without parent-directory segments.",
     "Do not include secrets, credentials, analytics trackers, or hidden network calls. Use only dependencies required by the project.",
+    "IMPORTANT: Every file must be COMPLETE and FUNCTIONAL. No 'TODO' comments, no placeholder text, no 'add your code here' comments.",
+    "Use real, meaningful content based on the user's brief - not lorem ipsum or generic placeholder text.",
     `Project brief: ${userPrompt}`,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
