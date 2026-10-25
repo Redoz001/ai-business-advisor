@@ -125,7 +125,14 @@ export default function ConversationEngine(
       });
 
       if (error) {
-        throw error;
+        let message = error.message;
+        try {
+          const body = await error.context?.json?.();
+          if (body?.error) message = body.error;
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(message);
       }
 
       if (!data?.url) {
@@ -135,7 +142,7 @@ export default function ConversationEngine(
       window.location.href = data.url;
     } catch (upgradeError) {
       console.error("Upgrade failed:", upgradeError);
-      alert("Could not start the Intelligence checkout. Please try again.");
+      alert(`Could not start the Intelligence checkout: ${upgradeError?.message || "Please try again."}`);
     }
   };
 

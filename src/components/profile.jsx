@@ -342,13 +342,23 @@ export default function Profile({ user, onProfileSaved }) {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Try to extract the server-side error message
+        let message = error.message;
+        try {
+          const body = await error.context?.json?.();
+          if (body?.error) message = body.error;
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(message);
+      }
       if (!data?.url) throw new Error("Checkout URL was not returned.");
 
       window.location.href = data.url;
     } catch (err) {
       console.error("Upgrade failed:", err);
-      alert("Could not start the Intelligence checkout. Please try again.");
+      alert(`Could not start the Intelligence checkout: ${err?.message || "Please try again."}`);
     } finally {
       setUpgradeLoading(false);
     }
